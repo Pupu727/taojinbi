@@ -16,6 +16,19 @@ if errorlevel 1 (
 )
 echo [OK] Python ready
 
+echo [..] Checking Python dependencies...
+python -c "import uiautomator2" >nul 2>nul
+if errorlevel 1 (
+    echo [..] First run: installing dependencies, please wait...
+    python -m pip install -r "%~dp0requirements.txt" -i https://pypi.tuna.tsinghua.edu.cn/simple
+    if errorlevel 1 (
+        echo [ERROR] Dependency install failed. Check network.
+        pause
+        exit /b 1
+    )
+)
+echo [OK] Dependencies ready
+
 if not exist "%~dp0platform-tools\adb.exe" (
     echo [ERROR] platform-tools\adb.exe not found.
     pause
