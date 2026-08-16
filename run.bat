@@ -20,9 +20,10 @@ echo [..] Checking Python dependencies...
 python -c "import uiautomator2" >nul 2>nul
 if errorlevel 1 (
     echo [..] First run: installing dependencies, please wait...
-    python -m pip install -r "%~dp0requirements.txt" -i https://pypi.tuna.tsinghua.edu.cn/simple
+    echo [..] Using Tsinghua mirror. If stuck, close VPN/proxy and retry.
+    python -m pip install -r "%~dp0requirements.txt" -i https://pypi.tuna.tsinghua.edu.cn/simple --timeout 30 --retries 3
     if errorlevel 1 (
-        echo [ERROR] Dependency install failed. Check network.
+        echo [ERROR] Dependency install failed. Check network, close VPN, then retry.
         pause
         exit /b 1
     )
