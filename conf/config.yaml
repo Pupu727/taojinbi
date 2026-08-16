@@ -20,10 +20,14 @@ task:
 
 # 操作配置
 operation:
-  browse_duration: 16  # 浏览任务内容的时长（秒）
-  swipe:
-    min_duration: 0.2  # 最小滑动时长（秒）
-    max_duration: 1.0  # 最大滑动时长（秒）
+  max_wait_duration: 35  # 任务完成弹窗等待上限（秒），读不到"浏览XX秒"要求时的兜底超时
+  required_buffer: 8  # 读到的任务要求秒数 + 此缓冲 = 超时上限（如要求25秒+8=33秒）
+  human_swipe:  # 模拟真人滑动参数（防黑号，可按需调整）
+    duration_min: 0.5  # 滑动时长下限（秒）
+    duration_max: 1.2  # 滑动时长上限（秒）
+    jitter_probability: 0.3  # 微抖动概率（0~1，越大抖动越频繁）
+    pause_min: 1.5  # 两次滑动间停顿下限（秒）
+    pause_max: 4.0  # 两次滑动间停顿上限（秒）
   wait_between_tasks: 2  # 任务间等待时间（秒）
   search_keyword: "笔记本电脑"  # 搜索任务的关键词
 

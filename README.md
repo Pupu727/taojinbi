@@ -54,24 +54,24 @@ task:
 
 **基础运行：**
 ```bash
-python "2025淘宝双11.py"
+python "main.py"
 ```
 
 **使用命令行参数（无需修改配置文件）：**
 ```bash
 # 只做金币任务
-python "2025淘宝双11.py" task.physical.enabled=false task.jump.enabled=false
+python "main.py" task.physical.enabled=false task.jump.enabled=false
 
 # 修改目标次数
-python "2025淘宝双11.py" task.coin.target_count=50
+python "main.py" task.coin.target_count=50
 
 # 加快浏览速度
-python "2025淘宝双11.py" operation.browse_duration=15
+python "main.py" operation.browse_duration=15
 ```
 
 或使用 conda：
 ```bash
-conda run -p <your_conda_path> --no-capture-output python "2025淘宝双11.py"
+conda run -p <your_conda_path> --no-capture-output python "main.py"
 ```
 
 ---
@@ -147,7 +147,7 @@ List of devices attached
 
 ```
 coin11-tb/
-├── 2025淘宝双11.py          # 主程序脚本
+├── main.py          # 主程序脚本
 ├── utils.py                 # 工具函数库
 ├── requirements.txt         # Python 依赖列表
 ├── README.md                # 项目说明（本文件）

@@ -62,10 +62,14 @@ class Config:
                 }
             },
             "operation": {
-                "browse_duration": 18,
-                "swipe": {
-                    "min_duration": 0.2,
-                    "max_duration": 1.0
+                "max_wait_duration": 35,
+                "required_buffer": 8,
+                "human_swipe": {
+                    "duration_min": 0.5,
+                    "duration_max": 1.2,
+                    "jitter_probability": 0.3,
+                    "pause_min": 1.5,
+                    "pause_max": 4.0
                 },
                 "wait_between_tasks": 4,
                 "search_keyword": "笔记本电脑"

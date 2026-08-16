@@ -62,10 +62,10 @@ echo.
 
 REM 检查主脚本
 echo [4/4] 检查主脚本文件...
-if exist "2025淘宝双11.py" (
+if exist "main.py" (
     echo ✓ 主脚本文件存在
 ) else (
-    echo ✗ 未找到 2025淘宝双11.py
+    echo ✗ 未找到 main.py
     set has_error=1
 )
 if exist "utils.py" (

@@ -131,7 +131,7 @@ pyinstaller --name=淘宝双11自动化工具 ^
     --collect-all=omegaconf ^
     --collect-all=hydra ^
     --collect-all=antlr4 ^
-    "2025淘宝双11.py"
+    "main.py"
 
 if errorlevel 1 (
     echo.

@@ -80,7 +80,7 @@ def build_exe():
         "--collect-all=cv2",
         "--collect-all=ddddocr",
         "--collect-all=omegaconf",
-        "2025淘宝双11.py"
+        "main.py"
     ]
     
     try:
