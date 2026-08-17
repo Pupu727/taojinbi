@@ -23,8 +23,8 @@ if exist "dist" (
     rmdir /s /q dist
     echo ✓ 已删除 dist 目录
 )
-if exist "淘宝双11自动化工具.spec" (
-    del /q "淘宝双11自动化工具.spec"
+if exist "淘金币自动化.spec" (
+    del /q "淘金币自动化.spec"
     echo ✓ 已删除 spec 文件
 )
 

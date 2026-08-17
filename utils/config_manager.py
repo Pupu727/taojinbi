@@ -50,29 +50,31 @@ class Config:
             "task": {
                 "coin": {
                     "target_count": 40,
-                    "enabled": True
-                },
-                "physical": {
-                    "target_count": 50,
-                    "enabled": True
-                },
-                "jump": {
-                    "enabled": True,
-                    "min_physical": 10
+                    "skip_keywords": [],
+                    "quiz_keywords": [],
                 }
             },
             "operation": {
                 "max_wait_duration": 35,
                 "required_buffer": 8,
                 "human_swipe": {
-                    "duration_min": 0.5,
-                    "duration_max": 1.2,
-                    "jitter_probability": 0.3,
-                    "pause_min": 1.5,
-                    "pause_max": 4.0
+                    "duration_min": 0.10,
+                    "duration_max": 0.18,
+                    "distance_ratio_min": 0.50,
+                    "distance_ratio_max": 0.70,
+                    "steps_min": 6,
+                    "steps_max": 9,
+                    "jitter_probability": 0.08,
+                    "interval_seconds": 2,
                 },
                 "wait_between_tasks": 4,
-                "search_keyword": "笔记本电脑"
+                "search_keyword": "笔记本电脑",
+                "checkin_keywords": ["立即签到", "今日签到", "签到领金币"],
+                "checkin_done_keywords": ["已签到"],
+                "checkin_ignore_in_text": ["领红包", "神器", "已签"],
+                "coin_entry_keywords": ["赚更多金币"],
+                "quick_return_keywords": [],
+                "quick_return_settle_seconds": 3,
             },
             "retry": {
                 "max_back_times": 10,
@@ -163,7 +165,6 @@ if __name__ == "__main__":
     
     # 测试获取配置
     print("测试获取配置:")
-    print(f"  金币任务目标: {config.get('task.coin.target_count')}")
-    print(f"  体力任务目标: {config.get('task.physical.target_count')}")
-    print(f"  浏览时长: {config.get('operation.browse_duration')}")
+    print(f"  淘金币任务目标: {config.get('task.coin.target_count')}")
+    print(f"  完成等待上限: {config.get('operation.max_wait_duration')}")
     print(f"  最大后退次数: {config.get('retry.max_back_times')}")

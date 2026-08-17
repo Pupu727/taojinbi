@@ -7,25 +7,108 @@ import ddddocr
 
 
 def check_chars_exist(text, chars=None):
-    if chars is None:
-        chars = ["拉好友", "抢红包", "搜索兴趣商品下单", "买精选商品", "全场3元3件", "固定入口", "农场小游戏", "砸蛋", "大众点评", "蚂蚁新村", "消消乐", "玩一玩", "3元抢3件包邮到家", "拍一拍", "1元抢爆款好货", "拉1人助力", "玩消消乐", "下单即得", "添加签到神器", "下单得肥料", "88VIP", "邀请好友", "好货限时直降", "连连消", "下单即得", "拍立淘", "玩任意游戏", "首页回访", "百亿外卖", "玩趣味游戏得大额体力", "天猫积分换体力", "头条刷热点", "一淘签到", "每拉"]
+    """任务名命中 chars 中任一关键词则跳过。chars 必须由配置传入，代码不内置名单。"""
+    if not text or not chars:
+        return False
     for char in chars:
-        if char in text:
+        if char and char in text:
+            return True
+    return False
+
+
+def is_external_jump_task(text, keywords=None):
+    """是否秒返。keywords 必须由配置传入。"""
+    if not text or not keywords:
+        return False
+    for key in keywords:
+        if key and key in text:
+            return True
+    return False
+
+
+def is_quiz_classroom_task(text, keywords=None):
+    """是否趣味课堂。keywords 必须由配置传入。"""
+    if not text or not keywords:
+        return False
+    for key in keywords:
+        if key and key in text:
             return True
     return False
 
 
 def get_current_app(d):
     info = d.shell("dumpsys window | grep mCurrentFocus").output
-    match = re.search(r'mCurrentFocus=Window\{.*? u0 (.*?)/(.*?)\}', info)
+    match = re.search(r"mCurrentFocus=Window\{.*? u0 (.*?)/(.*?)\}", info)
     if match:
-        package_name = match.group(1).strip()  # 去除空格
-        activity_name = match.group(2).strip()  # 去除空格
+        package_name = match.group(1).strip()
+        activity_name = match.group(2).strip()
         return package_name, activity_name
     return None, None
 
 
-other_app = ["蚂蚁森林", "农场", "百度", "支付宝", "芝麻信用", "蚂蚁庄园", "闲鱼", "神奇海洋", "淘宝特价版", "点淘", "饿了么", "微博", "直播", "领肥料礼包", "福气提现金", "看小说", "菜鸟", "斗地主", "领肥料礼包"]
+# 明确的外部 App 包名（浏览中误判外跳时只用这份白名单，避免把淘宝内浮层当外跳）
+KNOWN_EXTERNAL_PACKAGES = (
+    "com.eg.android.AlipayGphone",  # 支付宝
+    "com.taobao.idlefish",  # 闲鱼
+    "com.baidu.searchbox",
+    "com.sina.weibo",
+    "com.ss.android.article.news",
+    "com.achievo.vipshop",
+    "me.ele",  # 饿了么 / 闪购相关
+    "com.cainiao.wireless",  # 菜鸟
+    "com.cainiao.ebai",
+)
+
+EXTERNAL_PACKAGE_PREFIXES = (
+    "com.cainiao.",  # 菜鸟系
+    "com.eg.android.Alipay",
+    "me.ele",
+)
+
+
+def is_ignored_focus_package(pkg):
+    """输入法/系统浮层等，不应当成「跳转到其他页面」。"""
+    if not pkg:
+        return True
+    ignore_prefixes = (
+        "com.android.",
+        "com.google.android.",
+        "com.miui.",
+        "com.samsung.",
+        "com.huawei.",
+        "com.coloros.",
+        "com.oplus.",
+        "com.bbk.",
+        "com.vivo.",
+        "com.netease.nemaui",
+    )
+    return any(pkg.startswith(p) for p in ignore_prefixes)
+
+
+def is_taobao_family_package(pkg):
+    if not pkg:
+        return False
+    return (
+        pkg == "com.taobao.taobao"
+        or pkg.startswith("com.taobao.")
+        or pkg.startswith("com.tmall.")
+    )
+
+
+def is_real_external_app(pkg):
+    """
+    是否真正跳到了外部 App。
+    菜鸟/支付宝/饿了么等第三方优先判定为外跳；淘宝内 H5/气泡不算。
+    """
+    if not pkg or is_ignored_focus_package(pkg):
+        return False
+    if pkg in KNOWN_EXTERNAL_PACKAGES:
+        return True
+    if any(pkg.startswith(p) for p in EXTERNAL_PACKAGE_PREFIXES):
+        return True
+    if is_taobao_family_package(pkg):
+        return False
+    return True
 
 
 def fish_not_click(text, chars=None):

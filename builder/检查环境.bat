@@ -62,16 +62,16 @@ echo.
 
 REM 检查主脚本
 echo [4/4] 检查主脚本文件...
-if exist "main.py" (
+if exist "taojinbi.py" (
     echo ✓ 主脚本文件存在
 ) else (
-    echo ✗ 未找到 main.py
+    echo ✗ 未找到 taojinbi.py
     set has_error=1
 )
-if exist "utils.py" (
-    echo ✓ utils.py 存在
+if exist "utils" (
+    echo ✓ utils 目录存在
 ) else (
-    echo ✗ 未找到 utils.py
+    echo ✗ 未找到 utils 目录
     set has_error=1
 )
 echo.

@@ -1,13 +1,13 @@
 @echo off
 REM =====================================================
-REM 淘宝双11自动化工具 - 一键打包脚本
+REM 淘金币自动化 - 一键打包脚本
 REM =====================================================
 chcp 65001 >nul
-title 淘宝双11自动化工具 - 打包程序
+title 淘金币自动化 - 打包程序
 
 echo.
 echo ====================================================
-echo   淘宝双11自动化工具 - 一键打包
+echo   淘金币自动化 - 一键打包
 echo ====================================================
 echo.
 
@@ -95,7 +95,7 @@ REM 清理旧的构建文件
 echo [3/4] 清理旧的构建文件...
 if exist "build" rmdir /s /q build
 if exist "dist" rmdir /s /q dist
-if exist "淘宝双11自动化工具.spec" del /q "淘宝双11自动化工具.spec"
+if exist "淘金币自动化.spec" del /q "淘金币自动化.spec"
 echo ✓ 清理完成
 echo.
 
@@ -103,7 +103,7 @@ REM 开始打包
 echo [4/4] 开始打包程序...
 echo.
 
-pyinstaller --name=淘宝双11自动化工具 ^
+pyinstaller --name=淘金币自动化 ^
     --onedir ^
     --console ^
     --add-data="utils;utils" ^
@@ -131,7 +131,7 @@ pyinstaller --name=淘宝双11自动化工具 ^
     --collect-all=omegaconf ^
     --collect-all=hydra ^
     --collect-all=antlr4 ^
-    "main.py"
+    "taojinbi.py"
 
 if errorlevel 1 (
     echo.
@@ -143,7 +143,7 @@ if errorlevel 1 (
 REM 创建启动器
 echo.
 echo 创建启动器和使用说明...
-cd dist\淘宝双11自动化工具
+cd dist\淘金币自动化
 
 REM 复制配置文件到输出目录
 echo 复制配置文件到输出目录...
@@ -169,10 +169,10 @@ REM 创建 launcher.bat
 (
 echo @echo off
 echo chcp 65001 ^>nul
-echo title 淘宝双11自动化工具
+echo title 淘金币自动化
 echo.
 echo ====================================
-echo   淘宝双11自动化工具
+echo   淘金币自动化
 echo ====================================
 echo.
 echo REM 设置 ADB 环境变量
@@ -187,7 +187,7 @@ echo echo 按任意键启动程序...
 echo pause ^>nul
 echo.
 echo REM 启动主程序
-echo "%%~dp0淘宝双11自动化工具.exe"
+echo "%%~dp0淘金币自动化.exe"
 echo.
 echo if errorlevel 1 ^(
 echo     echo.
@@ -203,7 +203,7 @@ echo pause
 REM 创建使用说明
 (
 echo ====================================
-echo   淘宝双11自动化工具 - 使用说明
+echo   淘金币自动化 - 使用说明
 echo ====================================
 echo.
 echo 一、快速开始
@@ -222,17 +222,14 @@ echo    - 注意: 请用文本编辑器打开，保持 YAML 格式正确
 echo.
 echo 3. 运行程序
 echo    - 双击 launcher.bat 启动程序（推荐）
-echo    - 或直接双击 淘宝双11自动化工具.exe
+echo    - 或直接双击 淘金币自动化.exe
 echo.
 echo 二、配置说明
 echo.
 echo 主要配置项（conf\config.yaml）:
-echo   - task.coin.enabled: true/false    # 是否做金币任务
-echo   - task.coin.target_count: 40       # 金币任务目标次数
-echo   - task.physical.enabled: true/false # 是否做体力任务
-echo   - task.physical.target_count: 50   # 体力任务目标次数
-echo   - task.jump.enabled: true/false    # 是否跳一跳
-echo   - operation.browse_duration: 18    # 浏览时长（秒），可改小加快速度
+echo   - task.coin.target_count: 40       # 淘金币任务目标次数
+echo   - operation.max_wait_duration: 35  # 完成弹窗等待上限（秒）
+echo   - operation.required_buffer: 8     # 浏览秒数缓冲
 echo.
 echo 三、开启 USB 调试
 echo.
@@ -270,11 +267,11 @@ cd ..\..
 
 echo.
 echo 验证打包结果...
-set "output_dir=dist\淘宝双11自动化工具"
+set "output_dir=dist\淘金币自动化"
 
 REM 检查关键文件
 set missing_files=0
-if not exist "%output_dir%\淘宝双11自动化工具.exe" (
+if not exist "%output_dir%\淘金币自动化.exe" (
     echo ✗ 主程序不存在
     set missing_files=1
 )
@@ -298,10 +295,10 @@ echo ====================================================
 echo ✓ 打包完成！
 echo ====================================================
 echo.
-echo 输出目录: %CD%\dist\淘宝双11自动化工具
+echo 输出目录: %CD%\dist\淘金币自动化
 echo.
 echo 文件清单:
-echo   - 淘宝双11自动化工具.exe  (主程序)
+echo   - 淘金币自动化.exe  (主程序)
 echo   - launcher.bat            (启动器，推荐使用)
 echo   - README.txt              (使用文档)
 echo   - conf\config.yaml        (配置文件，可修改)
@@ -311,7 +308,7 @@ echo   - _internal/              (程序依赖)
 echo.
 echo ✨ 新功能: 用户可以通过编辑 conf\config.yaml 来调整任务参数！
 echo.
-echo 请将整个 "淘宝双11自动化工具" 文件夹分发给用户
+echo 请将整个 "淘金币自动化" 文件夹分发给用户
 echo 用户双击 launcher.bat 即可运行
 echo.
 
@@ -319,7 +316,7 @@ REM 询问是否打开输出目录
 echo 是否打开输出目录？(Y/N)
 set /p open_dir=
 if /i "%open_dir%"=="Y" (
-    explorer "dist\淘宝双11自动化工具"
+    explorer "dist\淘金币自动化"
 )
 
 echo.

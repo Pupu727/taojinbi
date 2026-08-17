@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-构建淘宝双11自动化工具的Windows可执行文件
+构建淘金币自动化工具的 Windows 可执行文件
 """
 import os
 import sys
@@ -62,7 +62,7 @@ def build_exe():
     # PyInstaller 命令
     cmd = [
         "pyinstaller",
-        "--name=淘宝双11自动化工具",
+        "--name=淘金币自动化",
         "--onedir",  # 使用单目录模式，方便携带 ADB
         "--console",  # 显示控制台窗口，方便查看日志和关闭程序
         "--icon=NONE",
@@ -80,13 +80,13 @@ def build_exe():
         "--collect-all=cv2",
         "--collect-all=ddddocr",
         "--collect-all=omegaconf",
-        "main.py"
+        "taojinbi.py"
     ]
     
     try:
         subprocess.check_call(cmd)
         print("\n✓ 构建成功！")
-        print(f"可执行文件位置: {os.path.abspath('dist/淘宝双11自动化工具')}")
+        print(f"可执行文件位置: {os.path.abspath('dist/淘金币自动化')}")
     except subprocess.CalledProcessError as e:
         print(f"\n✗ 构建失败: {e}")
         sys.exit(1)
@@ -94,13 +94,13 @@ def build_exe():
 def create_launcher():
     """创建启动器脚本"""
     print("\n创建启动器...")
-    
+
     launcher_content = '''@echo off
 chcp 65001 >nul
-title 淘宝双11自动化工具
+title 淘金币自动化
 
 echo ====================================
-echo   淘宝双11自动化工具
+echo   淘金币自动化
 echo ====================================
 echo.
 
@@ -116,138 +116,85 @@ echo 按任意键启动程序...
 pause >nul
 
 REM 启动主程序
-"%~dp0淘宝双11自动化工具.exe"
+"%~dp0淘金币自动化.exe"
 
 echo.
 echo 程序已结束
 pause
 '''
-    
+
     with open("launcher.bat", "w", encoding="utf-8") as f:
         f.write(launcher_content)
-    
+
     print("✓ 启动器创建完成: launcher.bat")
 
 def create_readme():
     """创建使用说明"""
     print("\n创建使用说明...")
-    
-    readme_content = '''# 淘宝双11自动化工具 - 使用说明
+
+    readme_content = '''# 淘金币自动化 - 使用说明
 
 ## 快速开始
 
 1. **连接安卓设备**
-   - 使用 USB 数据线连接手机到电脑
-   - 在手机上开启"USB 调试"模式
-   - 首次连接需要在手机上确认授权
+   - USB 连接手机，开启「USB 调试」，手机上点允许
 
 2. **调整配置（可选）**
-   - 编辑 `conf/config.yaml` 文件
-   - 可以修改任务目标次数、开关任务等
-   - 详细说明请查看 README.md
+   - 编辑 `conf/config.yaml`
+   - 主要改 `task.coin.target_count`（目标次数）
 
 3. **运行程序**
-   - 双击 `launcher.bat` 启动程序
-   - 或直接双击 `淘宝双11自动化工具.exe`
+   - 双击 `launcher.bat`
+   - 或直接双击 `淘金币自动化.exe`
 
-## 配置说明
+## 配置示例
 
-程序支持通过配置文件调整行为，主要配置项：
-
-### 任务开关
 ```yaml
 task:
   coin:
-    enabled: true      # 是否做金币任务
-    target_count: 40   # 目标次数
-  physical:
-    enabled: true      # 是否做体力任务
-    target_count: 50
-  jump:
-    enabled: true      # 是否跳一跳
-```
-
-### 操作速度
-```yaml
+    target_count: 40
 operation:
-  browse_duration: 18  # 浏览时长（秒），可改小加快速度
-  wait_between_tasks: 4  # 任务间等待（秒）
+  max_wait_duration: 35
+  required_buffer: 8
+  wait_between_tasks: 2
 ```
 
 ## 重要提示
 
-- 程序运行时请保持手机屏幕常亮
-- 不要手动操作手机，让程序自动执行
-- 确保手机已安装淘宝 App
-- 首次使用建议先测试几个任务，确认运行正常
-- 可以通过修改配置文件自定义任务参数
-
-## 开启 USB 调试
-
-### 小米/Redmi
-1. 设置 → 我的设备 → 全部参数 → 连续点击"MIUI 版本"7次
-2. 设置 → 更多设置 → 开发者选项 → 开启"USB 调试"
-
-### 华为/荣耀
-1. 设置 → 关于手机 → 连续点击"版本号"7次
-2. 设置 → 系统和更新 → 开发人员选项 → 开启"USB 调试"
-
-### OPPO/Vivo
-1. 设置 → 关于手机 → 连续点击"版本号"7次
-2. 设置 → 其他设置 → 开发者选项 → 开启"USB 调试"
+- 运行时保持屏幕常亮，不要手动操作手机
+- 需已安装淘宝 App
+- 自动化有账号风险，自行承担
 
 ## 常见问题
 
-**Q: 提示找不到设备？**
-A: 
-- 检查 USB 连接是否正常
-- 检查是否已开启 USB 调试
-- 尝试重新插拔 USB 线
-- 在手机上确认授权弹窗
+**找不到设备？** 检查 USB 调试、授权弹窗、重插线。
 
-**Q: 程序运行后没有反应？**
-A: 
-- 确保淘宝 App 已安装
-- 检查手机是否解锁
-- 查看是否有弹窗阻止自动化
-
-**Q: 任务完成不正确？**
-A: 淘宝界面可能更新，请联系开发者更新脚本
-
-## 技术支持
-
-如遇问题，请查看抖音/快手教程或联系开发者。
+**进不去任务页？** 淘宝可能改版，看日志里的按钮文案再适配。
 
 ---
 构建时间: {build_time}
 '''
-    
+
     from datetime import datetime
     readme_content = readme_content.format(build_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-    
+
     with open("使用说明.txt", "w", encoding="utf-8") as f:
         f.write(readme_content)
-    
+
     print("✓ 使用说明创建完成: 使用说明.txt")
 
 def main():
     print("=" * 60)
-    print("淘宝双11自动化工具 - 打包脚本")
+    print("淘金币自动化 - 打包脚本")
     print("=" * 60)
     print()
-    
-    # 步骤1: 下载 ADB
+
     download_adb()
-    
-    # 步骤2: 安装 PyInstaller
     install_pyinstaller()
-    
-    # 步骤3: 构建可执行文件
     build_exe()
-    
-    # 步骤4: 复制 ADB 到 dist 目录
+
     print("\n复制 ADB 工具到输出目录...")
-    dist_dir = os.path.join("dist", "淘宝双11自动化工具")
+    dist_dir = os.path.join("dist", "淘金币自动化")
     if os.path.exists(dist_dir):
         adb_dest = os.path.join(dist_dir, "platform-tools")
         if os.path.exists("platform-tools"):
@@ -255,25 +202,23 @@ def main():
                 shutil.rmtree(adb_dest)
             shutil.copytree("platform-tools", adb_dest)
             print("✓ ADB 工具已复制")
-    
-    # 步骤5: 创建启动器和说明
+
     os.chdir(dist_dir)
     create_launcher()
     create_readme()
-    
+
     print("\n" + "=" * 60)
     print("✓ 打包完成！")
     print("=" * 60)
     print(f"\n输出目录: {os.path.abspath('.')}")
     print("\n请将整个文件夹分发给用户，双击 launcher.bat 即可运行")
     print("\n文件清单:")
-    print("  - 淘宝双11自动化工具.exe  (主程序)")
-    print("  - launcher.bat          (启动器)")
-    print("  - 使用说明.txt           (使用文档)")
-    print("  - conf/config.yaml      (配置文件，可修改)")
-    print("  - platform-tools/       (ADB 工具)")
-    print("  - _internal/            (程序依赖)")
-    print("\n✨ 新功能：用户可以通过编辑 conf/config.yaml 来调整任务参数！")
+    print("  - 淘金币自动化.exe  (主程序)")
+    print("  - launcher.bat      (启动器)")
+    print("  - 使用说明.txt       (使用文档)")
+    print("  - conf/config.yaml  (配置文件，可修改)")
+    print("  - platform-tools/   (ADB 工具)")
+    print("  - _internal/        (程序依赖)")
 
 if __name__ == "__main__":
     main()
