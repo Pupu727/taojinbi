@@ -4,8 +4,8 @@ import android.accessibilityservice.AccessibilityService
 import android.content.ComponentName
 import android.content.Intent
 import android.graphics.Path
-import android.net.Uri
 import android.graphics.Rect
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -883,9 +883,10 @@ class A11yDriver(
     fun back(): Boolean =
         onMain { service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK) }
 
+    /**
+     * 直接 Intent 拉起淘宝，不先回桌面（避免 HOME 闪一下，也减少部分机型误弹授权框的触发路径）。
+     */
     fun launchTaobao(): Boolean {
-        onMain { service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME) }
-        sleep(0.6f)
         val pm = service.packageManager
         val intents = buildList {
             pm.getLaunchIntentForPackage(targetPkg)?.let { add(it) }
@@ -908,7 +909,6 @@ class A11yDriver(
             log("找不到淘宝启动入口，请手动打开淘宝")
             return false
         }
-        var any = false
         for (intent in intents.distinctBy { it.component?.flattenToString() ?: it.dataString }) {
             intent.addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or
@@ -919,12 +919,12 @@ class A11yDriver(
             val ok = onMain {
                 try {
                     service.startActivity(intent)
-                    log("已发送拉起淘宝 (${intent.component?.className ?: intent.dataString})")
+                    log("已拉起淘宝 (${intent.component?.className ?: intent.dataString})")
                     true
                 } catch (e: Exception) {
                     try {
                         service.applicationContext.startActivity(intent)
-                        log("已发送拉起淘宝(备用) (${intent.component?.className ?: intent.dataString})")
+                        log("已拉起淘宝(备用) (${intent.component?.className ?: intent.dataString})")
                         true
                     } catch (e2: Exception) {
                         log("拉起失败: ${e2.message}")
@@ -932,12 +932,9 @@ class A11yDriver(
                     }
                 }
             }
-            if (ok) {
-                any = true
-                break
-            }
+            if (ok) return true
         }
-        return any
+        return false
     }
 
     fun ensureTaobao(): Boolean {
@@ -945,7 +942,7 @@ class A11yDriver(
             log("当前已在淘宝")
             return true
         }
-        log("当前包名=${currentPkg()}，尝试拉起淘宝…")
+        log("当前包名=${currentPkg()}，直接拉起淘宝（不回桌面）…")
         if (!launchTaobao()) return false
         repeat(3) { i ->
             sleep(if (i == 0) 3.5f else 2f)

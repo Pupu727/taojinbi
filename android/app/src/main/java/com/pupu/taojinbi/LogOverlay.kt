@@ -55,7 +55,6 @@ class LogOverlay(private val context: Context) {
         try {
             val type = overlayType()
             val startY = dp(START_Y_DP)
-            val startX = (screenW - dp(160)).coerceAtLeast(dp(8))
 
             val bar = inflater().inflate(R.layout.overlay_log_bar, null)
             toggleBtn = bar.findViewById(R.id.btnOverlayToggle)
@@ -68,7 +67,7 @@ class LogOverlay(private val context: Context) {
                 width = WindowManager.LayoutParams.WRAP_CONTENT,
             ).apply {
                 gravity = Gravity.TOP or Gravity.START
-                x = startX
+                x = 0
                 y = startY
             }
             bar.setOnTouchListener { _, e ->
@@ -86,12 +85,14 @@ class LogOverlay(private val context: Context) {
             scroll = panel.findViewById(R.id.logScroll)
             logParams = baseParams(type, touchable = false, width = logWidthPx).apply {
                 gravity = Gravity.TOP or Gravity.START
-                x = startX
+                x = 0
                 y = startY + barHeightPx + dp(4)
             }
             wm.addView(panel, logParams)
             logView = panel
             setLogExpanded(false)
+            // 测宽后放到顶部正中
+            bar.post { moveToTopCenter() }
             flush()
         } catch (e: Exception) {
             throw IllegalStateException("悬浮窗显示失败: ${e.message}", e)
@@ -104,6 +105,10 @@ class LogOverlay(private val context: Context) {
             toggleBtn?.text = if (running) "停止" else "继续"
             val color = if (running) R.color.skip_primary else R.color.success
             toggleBtn?.setTextColor(ContextCompat.getColor(context, color))
+        }
+        // 开始跑任务时回到屏幕顶部中间，避免被拖到角落后不好找
+        if (running) {
+            barView?.post { moveToTopCenter() }
         }
     }
 
@@ -186,10 +191,22 @@ class LogOverlay(private val context: Context) {
             wm.updateViewLayout(barView, it)
         }
         logParams?.let {
-            it.x = x.coerceAtMost((screenW - logWidthPx).coerceAtLeast(0))
+            val barW = barView?.width?.takeIf { w -> w > 0 } ?: dp(ESTIMATED_BAR_WIDTH_DP)
+            val maxLogX = (screenW - logWidthPx).coerceAtLeast(0)
+            // 日志面板相对悬浮条水平居中
+            it.x = (x + barW / 2 - logWidthPx / 2).coerceIn(0, maxLogX)
             it.y = y + barHeightPx + dp(4)
             wm.updateViewLayout(logView, it)
         }
+    }
+
+    /** 水平居中、贴屏幕顶（略避开状态栏） */
+    private fun moveToTopCenter() {
+        val bar = barView ?: return
+        val w = if (bar.width > 0) bar.width else dp(ESTIMATED_BAR_WIDTH_DP)
+        val x = ((screenW - w) / 2).coerceAtLeast(0)
+        val y = dp(START_Y_DP).coerceIn(0, maxY)
+        applyPosition(x, y)
     }
 
     private fun flush() {
@@ -232,6 +249,8 @@ class LogOverlay(private val context: Context) {
     companion object {
         private const val BAR_HEIGHT_DP = 36
         private const val LOG_WIDTH_DP = 280
-        private const val START_Y_DP = 72
+        private const val ESTIMATED_BAR_WIDTH_DP = 168
+        /** 顶边距：略低于状态栏，仍在屏幕正上方 */
+        private const val START_Y_DP = 28
     }
 }

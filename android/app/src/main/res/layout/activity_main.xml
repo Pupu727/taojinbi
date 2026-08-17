@@ -281,7 +281,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
-                    android:text="进列表 → 去完成 → 已得返回；顶部悬浮条可展开日志"
+                    android:text="点开始会直接拉起淘宝；顶部悬浮条可展开日志"
                     android:textSize="12sp" />
 
                 <Button

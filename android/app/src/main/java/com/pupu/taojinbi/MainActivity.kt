@@ -87,7 +87,7 @@ class MainActivity : AppCompatActivity() {
         }
         try {
             openTaobaoFirst()
-            append("开始（顶部悬浮条可展开日志）")
+            append("开始（已尝试拉起淘宝；顶部悬浮条可展开日志）")
             toast("已开始，请看顶部悬浮条")
             svc.startLoop()
         } catch (e: Exception) {
@@ -96,7 +96,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** 先从 Activity 拉起淘宝（比无障碍服务后台拉起更可靠） */
+    /** 从前台 Activity 直接拉起淘宝，不回桌面 */
     private fun openTaobaoFirst() {
         val pkg = "com.taobao.taobao"
         val launch = packageManager.getLaunchIntentForPackage(pkg) ?: return

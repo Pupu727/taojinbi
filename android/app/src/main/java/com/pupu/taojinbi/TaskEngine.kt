@@ -31,7 +31,7 @@ class TaskEngine(
         d.log("目标 ${cfg.targetCount} | 放行${cfg.allowKeywords.size} 跳过${cfg.skipKeywords.size} | 金币≤${cfg.minProductCoinReward} | 无任务停${cfg.maxNoTaskCount}轮")
         try {
             if (!d.ensureTaobao()) {
-                d.log("未进入淘宝，停止（请手动打开淘宝后重试）")
+                d.log("未进入淘宝，停止（请确认已安装淘宝后重试）")
                 return
             }
             if (d.isClickProductTaskPage()) {
@@ -46,7 +46,7 @@ class TaskEngine(
                     break
                 }
                 if (!d.isTaobaoForeground()) {
-                    d.log("不在淘宝，重新拉起")
+                    d.log("不在淘宝，重新拉起（不回桌面）")
                     d.ensureTaobao()
                     navigateToCoinTasks()
                     enterTaskList()
