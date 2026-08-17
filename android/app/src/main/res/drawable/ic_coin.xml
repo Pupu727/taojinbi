@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+
+    <!-- 外缘（铜币厚边） -->
+    <path
+        android:fillColor="#8B5A2B"
+        android:pathData="M24,3a21,21 0 1,1 0,42a21,21 0 1,1 0,-42z" />
+
+    <!-- 币面：圆环 + 方孔（evenOdd 镂空） -->
+    <path
+        android:fillColor="#C8863D"
+        android:fillType="evenOdd"
+        android:pathData="M24,6a18,18 0 1,1 0,36a18,18 0 1,1 0,-36z M20.5,20.5h7v7h-7z" />
+
+    <!-- 方孔内缘阴影 -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M20.5,20.5h7v7h-7z"
+        android:strokeWidth="0.8"
+        android:strokeColor="#6B4423" />
+
+    <!-- 内圈弦纹 -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M24,10a14,14 0 1,1 0,28a14,14 0 1,1 0,-28z"
+        android:strokeWidth="0.6"
+        android:strokeColor="#A06830" />
+
+    <!-- 铜面高光 -->
+    <path
+        android:fillColor="#33FFFFFF"
+        android:pathData="M14,13a11,8 0 0,1 16,-3a9,6 0 0,0 -13,5z" />
+</vector>

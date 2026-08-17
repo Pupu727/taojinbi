@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">淘金助手</string>
+    <string name="app_tagline">自动完成淘金币浏览任务，本软件只可用于学习交流</string>
+    <string name="a11y_desc">读取淘宝界面并模拟点击、滑动，自动完成淘金币浏览任务。本软件只可用于学习交流。请仅在本人手机上开启。</string>
+</resources>

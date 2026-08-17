@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!--
+      淘金助手启动图标（几何居中版）
+      - 底铺满 108×108，圆角交给系统蒙版，避免「自带圆角 + 桌面再裁」造成视觉偏斜
+      - 所有圆用贝塞尔画，避开 180° 圆弧在部分机型上的偏移 bug
+      - 圆心统一 (54,54)，方孔中心同点
+    -->
+
+    <!-- 满幅朱砂底（系统负责圆角） -->
+    <path
+        android:fillColor="#6B2418"
+        android:pathData="M0,0h108v108h-108z" />
+
+    <!-- 内层稍亮，同样满幅居中 inset -->
+    <path
+        android:fillColor="#8F3424"
+        android:pathData="M8,8h92v92h-92z" />
+
+    <!-- 暖光托盘 r=36 → (54±36) -->
+    <path
+        android:fillColor="#C45A2C"
+        android:pathData="M54,18C73.882,18 90,34.118 90,54C90,73.882 73.882,90 54,90C34.118,90 18,73.882 18,54C18,34.118 34.118,18 54,18Z" />
+
+    <!-- 内托 r=28 -->
+    <path
+        android:fillColor="#E07840"
+        android:pathData="M54,26C69.464,26 82,38.536 82,54C82,69.464 69.464,82 54,82C38.536,82 26,69.464 26,54C26,38.536 38.536,26 54,26Z" />
+
+    <!-- 铜钱外缘 r=34 -->
+    <path
+        android:fillColor="#8B5A2B"
+        android:pathData="M54,20C72.778,20 88,35.222 88,54C88,72.778 72.778,88 54,88C35.222,88 20,72.778 20,54C20,35.222 35.222,20 54,20Z" />
+
+    <!-- 币面 r=30 + 方孔 14×14 中心 (54,54) -->
+    <path
+        android:fillColor="#E0A04A"
+        android:fillType="evenOdd"
+        android:pathData="M54,24C70.569,24 84,37.431 84,54C84,70.569 70.569,84 54,84C37.431,84 24,70.569 24,54C24,37.431 37.431,24 54,24Z M47,47h14v14h-14z" />
+
+    <!-- 方孔描边 -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M47,47h14v14h-14z"
+        android:strokeWidth="1.5"
+        android:strokeColor="#6B4423" />
+
+    <!-- 内圈弦纹 r=24 -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M54,30C67.255,30 78,40.745 78,54C78,67.255 67.255,78 54,78C40.745,78 30,67.255 30,54C30,40.745 40.745,30 54,30Z"
+        android:strokeWidth="1.2"
+        android:strokeColor="#B07838" />
+
+    <!-- 轻微高光（对称弧，避免左侧重导致视觉偏右） -->
+    <path
+        android:fillColor="#33FFFFFF"
+        android:pathData="M38,34C44,28 64,28 70,34C62,36 46,36 38,34Z" />
+</vector>

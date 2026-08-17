@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="@color/gold_soft">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/vault_surface_raised" />
+            <corners android:radius="@dimen/button_radius" />
+            <stroke
+                android:width="1dp"
+                android:color="@color/vault_border" />
+        </shape>
+    </item>
+</ripple>

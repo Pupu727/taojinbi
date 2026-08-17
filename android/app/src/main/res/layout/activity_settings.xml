@@ -1,0 +1,451 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/vault_bg"
+    android:orientation="vertical">
+
+    <!-- Top bar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="8dp">
+
+        <ImageButton
+            android:id="@+id/btnBack"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="返回"
+            android:src="@drawable/ic_back" />
+
+        <TextView
+            style="@style/TaojinbiTextTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="任务设置" />
+    </LinearLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="@dimen/screen_padding"
+            android:paddingBottom="24dp">
+
+            <!-- Rules card -->
+            <com.google.android.material.card.MaterialCardView
+                style="@style/TaojinbiCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:strokeColor="@color/gold_dim"
+                app:strokeWidth="1dp">
+
+                <TextView
+                    style="@style/TaojinbiTextBody"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:padding="@dimen/card_padding"
+                    android:text="点 Chip 勾选启用，长按可删除。白名单优先：命中放行词的任务一定会做，即使也在黑名单里。"
+                    android:textSize="13sp" />
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Allow list -->
+            <com.google.android.material.card.MaterialCardView
+                style="@style/TaojinbiCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/section_gap"
+                app:strokeColor="#445CB87A"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="@dimen/card_padding">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="放行白名单"
+                        android:textColor="@color/allow_primary"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/countAllow"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="已放行 0 条"
+                        android:textColor="@color/allow_primary"
+                        android:textSize="12sp"
+                        android:alpha="0.85" />
+
+                    <EditText
+                        android:id="@+id/searchAllow"
+                        style="@style/TaojinbiInput"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:hint="搜索放行词…"
+                        android:inputType="text" />
+
+                    <TextView
+                        style="@style/TaojinbiTextCaption"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:text="筛选显示" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:orientation="horizontal">
+
+                        <Button
+                            android:id="@+id/btnModeAllAllow"
+                            style="@style/TaojinbiFilterChip"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_weight="1"
+                            android:minWidth="0dp"
+                            android:text="全部" />
+
+                        <Button
+                            android:id="@+id/btnModeSelectedAllow"
+                            style="@style/TaojinbiFilterChip"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_marginHorizontal="4dp"
+                            android:layout_weight="1"
+                            android:minWidth="0dp"
+                            android:text="已选" />
+
+                        <Button
+                            android:id="@+id/btnModeUnselectedAllow"
+                            style="@style/TaojinbiFilterChip"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_weight="1"
+                            android:minWidth="0dp"
+                            android:text="未选" />
+                    </LinearLayout>
+
+                    <TextView
+                        style="@style/TaojinbiTextCaption"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="批量操作（仅当前列表）" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:orientation="horizontal">
+
+                        <Button
+                            android:id="@+id/btnSelectAllAllow"
+                            style="@style/TaojinbiFilterChip"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_marginEnd="4dp"
+                            android:layout_weight="1"
+                            android:minWidth="0dp"
+                            android:text="全选" />
+
+                        <Button
+                            android:id="@+id/btnClearAllow"
+                            style="@style/TaojinbiFilterChip"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_weight="1"
+                            android:minWidth="0dp"
+                            android:text="清空" />
+                    </LinearLayout>
+
+                    <androidx.core.widget.NestedScrollView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:maxHeight="240dp">
+
+                        <com.google.android.material.chip.ChipGroup
+                            android:id="@+id/chipsAllow"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            app:chipSpacingHorizontal="6dp"
+                            app:chipSpacingVertical="4dp" />
+                    </androidx.core.widget.NestedScrollView>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:orientation="horizontal">
+
+                        <EditText
+                            android:id="@+id/addAllow"
+                            style="@style/TaojinbiInput"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:hint="自定义放行词"
+                            android:inputType="text" />
+
+                        <Button
+                            android:id="@+id/btnAddAllow"
+                            style="@style/TaojinbiButtonPrimary"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:minWidth="72dp"
+                            android:paddingHorizontal="16dp"
+                            android:text="添加"
+                            android:textSize="14sp" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Skip list -->
+            <com.google.android.material.card.MaterialCardView
+                style="@style/TaojinbiCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/section_gap"
+                app:strokeColor="#44E07A6F"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="@dimen/card_padding">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="跳过黑名单"
+                        android:textColor="@color/skip_primary"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/countSkip"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="已跳过 0 条"
+                        android:textColor="@color/skip_primary"
+                        android:textSize="12sp"
+                        android:alpha="0.85" />
+
+                    <EditText
+                        android:id="@+id/searchSkip"
+                        style="@style/TaojinbiInput"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:hint="搜索跳过词…"
+                        android:inputType="text" />
+
+                    <TextView
+                        style="@style/TaojinbiTextCaption"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:text="筛选显示" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:orientation="horizontal">
+
+                        <Button
+                            android:id="@+id/btnModeAllSkip"
+                            style="@style/TaojinbiFilterChip"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_weight="1"
+                            android:minWidth="0dp"
+                            android:text="全部" />
+
+                        <Button
+                            android:id="@+id/btnModeSelectedSkip"
+                            style="@style/TaojinbiFilterChip"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_marginHorizontal="4dp"
+                            android:layout_weight="1"
+                            android:minWidth="0dp"
+                            android:text="已选" />
+
+                        <Button
+                            android:id="@+id/btnModeUnselectedSkip"
+                            style="@style/TaojinbiFilterChip"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_weight="1"
+                            android:minWidth="0dp"
+                            android:text="未选" />
+                    </LinearLayout>
+
+                    <TextView
+                        style="@style/TaojinbiTextCaption"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="批量操作（仅当前列表）" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:orientation="horizontal">
+
+                        <Button
+                            android:id="@+id/btnSelectAllSkip"
+                            style="@style/TaojinbiFilterChip"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_marginEnd="4dp"
+                            android:layout_weight="1"
+                            android:minWidth="0dp"
+                            android:text="全选" />
+
+                        <Button
+                            android:id="@+id/btnClearSkip"
+                            style="@style/TaojinbiFilterChip"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_weight="1"
+                            android:minWidth="0dp"
+                            android:text="清空" />
+                    </LinearLayout>
+
+                    <androidx.core.widget.NestedScrollView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:maxHeight="280dp">
+
+                        <com.google.android.material.chip.ChipGroup
+                            android:id="@+id/chipsSkip"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            app:chipSpacingHorizontal="6dp"
+                            app:chipSpacingVertical="4dp" />
+                    </androidx.core.widget.NestedScrollView>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:orientation="horizontal">
+
+                        <EditText
+                            android:id="@+id/addSkip"
+                            style="@style/TaojinbiInput"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:hint="自定义跳过词"
+                            android:inputType="text" />
+
+                        <Button
+                            android:id="@+id/btnAddSkip"
+                            style="@style/TaojinbiButtonPrimary"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:minWidth="72dp"
+                            android:paddingHorizontal="16dp"
+                            android:text="添加"
+                            android:textSize="14sp" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Target -->
+            <com.google.android.material.card.MaterialCardView
+                style="@style/TaojinbiCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/section_gap">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="@dimen/card_padding">
+
+                    <TextView
+                        style="@style/TaojinbiTextTitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="本轮目标数量"
+                        android:textColor="@color/gold_primary"
+                        android:textSize="15sp" />
+
+                    <EditText
+                        android:id="@+id/editTarget"
+                        style="@style/TaojinbiInput"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:inputType="number" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <TextView
+                android:id="@+id/saveHint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:textColor="@color/success"
+                android:textSize="12sp"
+                android:visibility="gone" />
+        </LinearLayout>
+    </ScrollView>
+
+    <!-- Sticky save bar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/vault_surface"
+        android:elevation="8dp"
+        android:orientation="vertical"
+        android:paddingHorizontal="@dimen/screen_padding"
+        android:paddingVertical="12dp">
+
+        <Button
+            android:id="@+id/btnSave"
+            style="@style/TaojinbiButtonPrimary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="保存设置" />
+
+        <Button
+            android:id="@+id/btnRestore"
+            style="@style/TaojinbiButtonGhost"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="恢复 config 默认白名单/黑名单" />
+    </LinearLayout>
+</LinearLayout>

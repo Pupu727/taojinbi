@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Vault base -->
+    <color name="vault_bg">#0F0D0B</color>
+    <color name="vault_surface">#1A1612</color>
+    <color name="vault_surface_raised">#231E18</color>
+    <color name="vault_border">#3D342C</color>
+    <color name="vault_border_soft">#2A241E</color>
+
+    <!-- Text -->
+    <color name="text_primary">#F5EDE4</color>
+    <color name="text_secondary">#B8A99A</color>
+    <color name="text_muted">#7A6F63</color>
+
+    <!-- Gold — signature accent -->
+    <color name="gold_primary">#F0B429</color>
+    <color name="gold_dim">#C8941F</color>
+    <color name="gold_soft">#33F0B429</color>
+
+    <!-- Semantic -->
+    <color name="allow_primary">#5CB87A</color>
+    <color name="allow_soft">#1E3328</color>
+    <color name="skip_primary">#E07A6F</color>
+    <color name="skip_soft">#33201C</color>
+    <color name="info_primary">#6EB5E8</color>
+    <color name="success">#6BCB8B</color>
+    <color name="warning">#F0B429</color>
+    <color name="danger">#E05A4F</color>
+
+    <!-- Terminal log -->
+    <color name="log_bg">#101510</color>
+    <color name="log_text">#9FD89A</color>
+    <color name="log_border">#2A3D28</color>
+
+    <!-- Overlay -->
+    <color name="overlay_bar">#E61A1612</color>
+    <color name="overlay_panel">#EE121810</color>
+</resources>
