@@ -31,6 +31,7 @@ data class AppConfig(
     val waitOnlyKeywords: List<String>,
     val clickProductKeywords: List<String>,
     val minProductCoinReward: Int,
+    val maxStaleProgressAttempts: Int,
 )
 
 data class ConfigLoadInfo(
@@ -222,6 +223,7 @@ object ConfigLoader {
             waitOnlyKeywords = lists["wait_only_keywords"] ?: defaultWaitOnlyKeywords(),
             clickProductKeywords = lists["click_product_keywords"] ?: defaultClickProductKeywords(),
             minProductCoinReward = nums["min_product_coin_reward"]?.toIntOrNull() ?: 10,
+            maxStaleProgressAttempts = nums["max_stale_progress_attempts"]?.toIntOrNull() ?: 2,
         ).let { tuneSwipeForMobile(it) }
     }
 

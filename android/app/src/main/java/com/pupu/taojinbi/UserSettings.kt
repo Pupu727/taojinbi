@@ -11,6 +11,19 @@ object UserSettings {
     private const val KEY_ALLOW_POOL = "allow_keyword_pool"
     private const val KEY_TARGET = "target_count"
     private const val KEY_SAVED = "settings_saved"
+    private const val KEY_DUAL_MODE = "dual_app_mode"
+    private const val KEY_COORD1_X = "dual_coord1_x"
+    private const val KEY_COORD1_Y = "dual_coord1_y"
+    private const val KEY_COORD2_X = "dual_coord2_x"
+    private const val KEY_COORD2_Y = "dual_coord2_y"
+
+    const val DUAL_OFF = 0
+    const val DUAL_MAIN = 1
+    const val DUAL_CLONE = 2
+
+    /** Spinner 里「选手势坐标」的虚拟项，不会写入 mode */
+    const val SPINNER_PICK_COORD1 = 3
+    const val SPINNER_PICK_COORD2 = 4
 
     fun isSaved(context: Context): Boolean =
         prefs(context).getBoolean(KEY_SAVED, false)
@@ -30,6 +43,30 @@ object UserSettings {
     fun getTargetCount(context: Context): Int {
         if (!isSaved(context)) return ConfigLoader.defaultTargetCount(context)
         return prefs(context).getInt(KEY_TARGET, ConfigLoader.defaultTargetCount(context))
+    }
+
+    fun getDualAppMode(context: Context): Int =
+        prefs(context).getInt(KEY_DUAL_MODE, DUAL_OFF)
+
+    fun getDualCoord1(context: Context): Pair<Int, Int> {
+        val p = prefs(context)
+        return p.getInt(KEY_COORD1_X, -1) to p.getInt(KEY_COORD1_Y, -1)
+    }
+
+    fun getDualCoord2(context: Context): Pair<Int, Int> {
+        val p = prefs(context)
+        return p.getInt(KEY_COORD2_X, -1) to p.getInt(KEY_COORD2_Y, -1)
+    }
+
+    fun dualAppModeLabel(context: Context): String = when (getDualAppMode(context)) {
+        DUAL_MAIN -> "主应用"
+        DUAL_CLONE -> "双开应用"
+        else -> "不开启该功能"
+    }
+
+    fun formatCoord(context: Context, slot: Int): String {
+        val (x, y) = if (slot == 2) getDualCoord2(context) else getDualCoord1(context)
+        return if (x >= 0 && y >= 0) "($x, $y)" else "未设置"
     }
 
     fun skipKeywordPool(context: Context): List<String> {
@@ -55,15 +92,43 @@ object UserSettings {
         targetCount: Int,
         skipPool: List<String> = skipKeywords,
         allowPool: List<String> = allowKeywords,
+        dualAppMode: Int? = null,
+        coord1: Pair<Int, Int>? = null,
+        coord2: Pair<Int, Int>? = null,
     ) {
         val target = targetCount.coerceIn(1, 999)
-        prefs(context).edit()
+        val editor = prefs(context).edit()
             .putString(KEY_SKIP, skipKeywords.joinToString("\n"))
             .putString(KEY_ALLOW, allowKeywords.joinToString("\n"))
             .putString(KEY_SKIP_POOL, skipPool.joinToString("\n"))
             .putString(KEY_ALLOW_POOL, allowPool.joinToString("\n"))
             .putInt(KEY_TARGET, target)
             .putBoolean(KEY_SAVED, true)
+        if (dualAppMode != null) {
+            editor.putInt(KEY_DUAL_MODE, dualAppMode.coerceIn(DUAL_OFF, DUAL_CLONE))
+        }
+        coord1?.let { (x, y) ->
+            editor.putInt(KEY_COORD1_X, x).putInt(KEY_COORD1_Y, y)
+        }
+        coord2?.let { (x, y) ->
+            editor.putInt(KEY_COORD2_X, x).putInt(KEY_COORD2_Y, y)
+        }
+        editor.apply()
+    }
+
+    fun saveDualCoord(context: Context, slot: Int, x: Int, y: Int) {
+        val editor = prefs(context).edit()
+        if (slot == 2) {
+            editor.putInt(KEY_COORD2_X, x).putInt(KEY_COORD2_Y, y)
+        } else {
+            editor.putInt(KEY_COORD1_X, x).putInt(KEY_COORD1_Y, y)
+        }
+        editor.apply()
+    }
+
+    fun saveDualAppMode(context: Context, mode: Int) {
+        prefs(context).edit()
+            .putInt(KEY_DUAL_MODE, mode.coerceIn(DUAL_OFF, DUAL_CLONE))
             .apply()
     }
 

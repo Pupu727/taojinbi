@@ -10,22 +10,85 @@ private data class PickResult(
     val visibleCount: Int,
     val progressCur: Int? = null,
     val progressTarget: Int? = null,
+    val directClaim: Boolean = false,
 )
 
 class TaskEngine(
     private val svc: CoinA11yService,
-    private val cfg: AppConfig,
+    private var cfg: AppConfig,
     private val d: A11yDriver,
 ) {
+    private data class PauseSnapshot(
+        val pkg: String,
+        val inTask: Boolean,
+        val onList: Boolean,
+        val taskName: String?,
+    )
+
     private val clicked = mutableSetOf<String>()
+    private val deadTasks = mutableSetOf<String>()
+    private val staleCounts = mutableMapOf<String, Int>()
     private var homeEntryClicked = false
     private var savedEntryXy: Pair<Int, Int>? = null
     private var finishCount = 0
     private var noTaskCount = 0
 
-    private var listScrollStuck = 0
+    private var pauseSnapshot: PauseSnapshot? = null
+    private var resumeAbortTask = false
+    private var inTaskExecution = false
+    private var currentTaskName: String? = null
 
     private enum class ScrollResult { MOVED, STUCK, AT_END }
+
+    fun ensurePauseSnapshot() {
+        if (pauseSnapshot != null) return
+        pauseSnapshot = PauseSnapshot(
+            d.currentPkg(),
+            inTaskExecution,
+            d.listOpen(),
+            currentTaskName,
+        )
+        d.log("已记录界面，可调整配置")
+    }
+
+    /** 点「继续」前调用：重载配置并判断能否续跑当前任务 */
+    fun prepareResume() {
+        val loaded = ConfigLoader.loadWithInfo(svc)
+        cfg = loaded.config
+        d.log("配置已重载")
+        val snap = pauseSnapshot
+        pauseSnapshot = null
+        resumeAbortTask = false
+        if (snap == null) return
+        if (!resumeContextOk(snap)) {
+            resumeAbortTask = true
+            d.log("界面已变，放弃当前任务并重新选任务")
+        } else {
+            d.log("仍在原界面，继续当前任务")
+        }
+    }
+
+    private fun resumeContextOk(snap: PauseSnapshot): Boolean {
+        val pkg = d.currentPkg()
+        if (pkg != cfg.packageName && !pkg.startsWith("com.taobao.")) {
+            return false
+        }
+        if (snap.inTask && !snap.onList && d.listOpen()) {
+            return false
+        }
+        return true
+    }
+
+    private fun cooperate() {
+        if (!svc.running.get()) return
+        svc.blockWhilePaused()
+    }
+
+    /** 任务页内暂停恢复；false=应中断当前浏览 */
+    private fun cooperateInTask(): Boolean {
+        cooperate()
+        return !(resumeAbortTask && inTaskExecution)
+    }
 
     fun run() {
         d.log("目标 ${cfg.targetCount} | 放行${cfg.allowKeywords.size} 跳过${cfg.skipKeywords.size} | 金币≤${cfg.minProductCoinReward} | 无任务停${cfg.maxNoTaskCount}轮")
@@ -41,6 +104,7 @@ class TaskEngine(
                 enterTaskList()
             }
             while (svc.running.get()) {
+                cooperate()
                 if (finishCount >= cfg.targetCount) {
                     d.log("✓ 完成 $finishCount/${cfg.targetCount}")
                     break
@@ -57,13 +121,31 @@ class TaskEngine(
                     d.sleep(cfg.waitBetweenTasks)
                     continue
                 }
+                if (recoverStrandedBrowseTask()) {
+                    d.sleep(cfg.waitBetweenTasks)
+                    continue
+                }
                 val nodes0 = d.snapshot()
-                nodes0.firstOrNull { it.label == "立即领取" }?.let {
-                    d.clickBounds(it.bounds)
-                    d.sleep(2f)
+                val claimBtn = nodes0.firstOrNull { it.label == "立即领取" }
+                if (claimBtn != null) {
+                    d.log("点击立即领取")
+                    d.clickBounds(claimBtn.bounds)
+                    d.sleep(1.5f)
+                    if (!d.listOpen()) {
+                        d.log("点立即领取后列表关了，重开")
+                        homeEntryClicked = false
+                        enterTaskList()
+                        continue
+                    }
                 }
                 var pick = pickNext()
                 if (pick.btn == null && pick.clickRect == null && pick.visibleCount > 0) {
+                    if (!d.listOpen()) {
+                        if (recoverStrandedBrowseTask()) continue
+                        d.log("有按钮但不在任务列表，回首页重进")
+                        hardResetToTaskList()
+                        continue
+                    }
                     d.log("本屏 ${pick.visibleCount} 个均已屏蔽/已点，向下滚动")
                     if (scrollTaskList() == ScrollResult.AT_END && !handleFullListPass()) break
                     continue
@@ -105,6 +187,10 @@ class TaskEngine(
                     noTaskCount = 0
                     val name = pick.name ?: "未命名"
                     val rect = pick.clickRect ?: pick.btn!!.bounds
+                    val beforeCur = pick.progressCur
+                    val beforeTarget = pick.progressTarget
+                    inTaskExecution = true
+                    currentTaskName = name
                     d.log("点击: $name")
                     clicked += d.taskProgressKey(
                         name, pick.progressCur, pick.progressTarget, rect,
@@ -114,31 +200,51 @@ class TaskEngine(
                     dismissPopups(listSafe = false)
                     val clickProductsTask = isClickProductTaskName(name)
                     if (clickProductsTask) d.sleep(1.5f)
-                    if (d.isClickProductTaskPage()) {
-                        d.log("已进入点商品页")
-                    } else if (d.listOpen()) {
-                        d.log("点完仍在列表，跳过")
-                        continue
+                    try {
+                        if (!cooperateInTask()) {
+                            d.log("暂停恢复后界面已变，中断当前任务")
+                            continue
+                        }
+                        if (d.isClickProductTaskPage()) {
+                            d.log("已进入点商品页")
+                        } else if (d.listOpen()) {
+                            if (pick.directClaim) {
+                                d.sleep(1f)
+                                val (done, how) = detectDone()
+                                finishCount += 1
+                                val hint = if (done) " ($how)" else ""
+                                d.log("✓ 列表内直接领取 +1 → $finishCount/${cfg.targetCount}$hint")
+                            } else {
+                                d.log("点完仍在列表，跳过")
+                            }
+                            noteProgressAfter(name, beforeCur, beforeTarget)
+                            continue
+                        }
+                        val search = name.contains("搜一搜") || name.contains("搜索") ||
+                            d.pageText().contains("搜索有福利")
+                        if (search) doSearch()
+                        val quiz = containsAny(name, cfg.quizKeywords)
+                        val quick = !quiz && containsAny(name, cfg.quickReturnKeywords)
+                        val waitOnly = !quiz && !quick && containsAny(name, cfg.waitOnlyKeywords)
+                        val runClickProducts = clickProductsTask || d.isClickProductTaskPage()
+                        if (quiz) d.log("趣味课堂")
+                        if (quick) d.log("秒返")
+                        if (waitOnly) d.log("沉浸看·只等待")
+                        if (runClickProducts) d.log("点商品任务")
+                        val ok = operateTask(search, quick, quiz, waitOnly, runClickProducts)
+                        if (ok) {
+                            finishCount += 1
+                            d.log("✓ +1 → $finishCount/${cfg.targetCount}")
+                        } else {
+                            d.log("✗ 未回列表，仍 $finishCount/${cfg.targetCount}")
+                        }
+                        noteProgressAfter(name, beforeCur, beforeTarget)
+                        noTaskCount = 0
+                    } finally {
+                        inTaskExecution = false
+                        currentTaskName = null
+                        resumeAbortTask = false
                     }
-                    val search = name.contains("搜一搜") || name.contains("搜索") ||
-                        d.pageText().contains("搜索有福利")
-                    if (search) doSearch()
-                    val quiz = containsAny(name, cfg.quizKeywords)
-                    val quick = !quiz && containsAny(name, cfg.quickReturnKeywords)
-                    val waitOnly = !quiz && !quick && containsAny(name, cfg.waitOnlyKeywords)
-                    val runClickProducts = clickProductsTask || d.isClickProductTaskPage()
-                    if (quiz) d.log("趣味课堂")
-                    if (quick) d.log("秒返")
-                    if (waitOnly) d.log("沉浸看·只等待")
-                    if (runClickProducts) d.log("点商品任务")
-                    val ok = operateTask(search, quick, quiz, waitOnly, runClickProducts)
-                    if (ok) {
-                        finishCount += 1
-                        d.log("✓ +1 → $finishCount/${cfg.targetCount}")
-                    } else {
-                        d.log("✗ 未回列表，仍 $finishCount/${cfg.targetCount}")
-                    }
-                    noTaskCount = 0
                 } else {
                     d.log("未找到可执行任务")
                     if (d.isClickProductTaskPage()) {
@@ -168,7 +274,6 @@ class TaskEngine(
     private fun handleFullListPass(): Boolean {
         noTaskCount += 1
         d.log("✓ 全列表无可做任务 第 $noTaskCount/${cfg.maxNoTaskCount} 轮")
-        listScrollStuck = 0
         if (noTaskCount >= cfg.maxNoTaskCount) {
             pauseAtListEnd()
             return false
@@ -221,7 +326,6 @@ class TaskEngine(
     private fun pauseAtListEnd() {
         d.log("✓ ${cfg.maxNoTaskCount} 轮遍历均无新任务，停止")
         d.log("本轮完成 $finishCount/${cfg.targetCount}，点「继续」恢复")
-        listScrollStuck = 0
         svc.stopLoop()
     }
 
@@ -237,21 +341,14 @@ class TaskEngine(
             after = d.listFingerprint()
         }
         if (before.isBlank() || before != after) {
-            listScrollStuck = 0
             return ScrollResult.MOVED
         }
-        listScrollStuck += 1
-        d.log("滑动后仍无新任务 ($listScrollStuck/2)")
-        if (listScrollStuck >= 2) {
-            if (d.isClickProductTaskPage()) {
-                d.log("滑动无进展，实为点商品页")
-                listScrollStuck = 0
-                return ScrollResult.STUCK
-            }
-            listScrollStuck = 0
-            return ScrollResult.AT_END
+        d.log("滑动后仍无新任务")
+        if (d.isClickProductTaskPage()) {
+            d.log("滑动无进展，实为点商品页")
+            return ScrollResult.STUCK
         }
-        return ScrollResult.STUCK
+        return ScrollResult.AT_END
     }
 
     private fun pickNext(): PickResult {
@@ -279,6 +376,17 @@ class TaskEngine(
             if (containsAny(name, cfg.skipKeywords) && containsAny(name, cfg.allowKeywords)) {
                 d.log("  [行$i] $name 白名单覆盖黑名单")
             }
+            val base = taskBaseName(name)
+            if (base in deadTasks) {
+                d.log("  [行$i] $name 进度无变化已自动跳过")
+                return@forEachIndexed
+            }
+            val pCur = row.progressCur
+            val pTarget = row.progressTarget
+            if (pCur != null && pTarget != null && pCur >= pTarget && pTarget > 0) {
+                d.log("  [行$i] $name 进度已满，跳过")
+                return@forEachIndexed
+            }
             if (d.shouldSkipAsClicked(name, row.progressCur, row.progressTarget, row.clickBounds, clicked)) {
                 val prog = row.progressCur?.let { c -> row.progressTarget?.let { t -> "($c/$t)" } } ?: ""
                 d.log("  [行$i] $name$prog 本进度已点")
@@ -302,7 +410,10 @@ class TaskEngine(
                 return@forEachIndexed
             }
             d.log("  [行$i] 选中 $name${formatProg(row.progressCur, row.progressTarget)}")
-            return PickResult(go, go.bounds, name, total, row.progressCur, row.progressTarget)
+            return PickResult(
+                go, go.bounds, name, total, row.progressCur, row.progressTarget,
+                directClaim = d.isDirectClaimLabel(go.label),
+            )
         }
 
         gos.forEachIndexed { i, btn ->
@@ -330,6 +441,15 @@ class TaskEngine(
             if (containsAny(name, cfg.skipKeywords) && containsAny(name, cfg.allowKeywords)) {
                 d.log("  [$i] $name 白名单覆盖黑名单")
             }
+            val base = taskBaseName(name)
+            if (base in deadTasks) {
+                d.log("  [$i] $name 进度无变化已自动跳过")
+                return@forEachIndexed
+            }
+            if (pCur != null && pTarget != null && pCur >= pTarget && pTarget > 0) {
+                d.log("  [$i] $name 进度已满，跳过")
+                return@forEachIndexed
+            }
             if (d.shouldSkipAsClicked(name, pCur, pTarget, btn.bounds, clicked)) {
                 d.log("  [$i] $name${formatProg(pCur, pTarget)} 本进度已点")
                 return@forEachIndexed
@@ -351,13 +471,62 @@ class TaskEngine(
                 return@forEachIndexed
             }
             d.log("  [$i] 选中 $name${formatProg(pCur, pTarget)}")
-            return PickResult(btn, btn.bounds, name, total, pCur, pTarget)
+            return PickResult(
+                btn, btn.bounds, name, total, pCur, pTarget,
+                directClaim = d.isDirectClaimLabel(btn.label),
+            )
         }
         return PickResult(null, null, null, total)
     }
 
     private fun formatProg(cur: Int?, target: Int?): String =
         if (cur != null && target != null) "($cur/$target)" else ""
+
+    private val progressTailRe = Regex("""[(（]\s*(\d+)\s*/\s*(\d+)\s*[)）]\s*$""")
+
+    private fun taskBaseName(name: String): String {
+        val base = progressTailRe.replace(name.trim(), "").trim()
+        return base.ifEmpty { name.trim() }
+    }
+
+    private fun readListProgress(base: String): Pair<Int, Int>? {
+        for (row in d.findTaskRows()) {
+            val n = row.name
+            if (taskBaseName(n) == base || n.contains(base)) {
+                val cur = row.progressCur
+                val target = row.progressTarget
+                if (cur != null && target != null) return cur to target
+            }
+        }
+        return null
+    }
+
+    /** 做完一轮后看进度有没有涨；(0/5)→(1/5) 继续；(0/1) 连续无变化则本轮跳过 */
+    private fun noteProgressAfter(taskName: String, beforeCur: Int?, beforeTarget: Int?) {
+        if (beforeCur == null || beforeTarget == null) return
+        val base = taskBaseName(taskName)
+        d.sleep(0.8f)
+        val after = readListProgress(base)
+        if (after == null) {
+            staleCounts.remove(base)
+            d.log("[进度] $base 列表里已看不到，视为有变化")
+            return
+        }
+        val (afterCur, afterTarget) = after
+        if (afterCur > beforeCur) {
+            staleCounts.remove(base)
+            d.log("[进度] $base $beforeCur/$beforeTarget → $afterCur/$afterTarget，继续可做")
+            return
+        }
+        val n = (staleCounts[base] ?: 0) + 1
+        staleCounts[base] = n
+        val limit = cfg.maxStaleProgressAttempts.coerceAtLeast(1)
+        d.log("[进度] $base 仍是 $afterCur/$afterTarget（第 $n/$limit 次无变化）")
+        if (n >= limit) {
+            deadTasks.add(base)
+            d.log("⚠ $base 进度连续无变化，本轮自动跳过")
+        }
+    }
 
     /** 从淘宝任意页导航到淘金币任务列表 */
     private fun navigateToCoinTasks() {
@@ -404,6 +573,27 @@ class TaskEngine(
         d.log("⚠ 导航未确认到任务列表，继续尝试")
     }
 
+    /** 签到成功弹层还在时不要点赚更多金币，否则列表会叠在弹层上，一读任务就一起关掉 */
+    private fun claimCheckinOverlay() {
+        d.log("处理签到成功弹层")
+        repeat(3) {
+            if (!svc.running.get()) return
+            if (d.listOpen()) return
+            val hit = d.findNodesByText("立即领取", "开心收下").firstOrNull { n ->
+                val t = n.label.trim()
+                t == "立即领取" || t == "开心收下"
+            }
+            if (hit != null) {
+                d.log("签到弹层: ${hit.label}")
+                d.clickBounds(hit.bounds)
+                d.sleep(0.8f)
+            } else {
+                d.sleep(1f)
+                return
+            }
+        }
+    }
+
     private fun enterTaskList() {
         d.sleep(1f)
         if (d.listOpen()) {
@@ -427,14 +617,21 @@ class TaskEngine(
             d.log("签到: $label")
             savedEntryXy = node.bounds.centerX() to node.bounds.centerY()
             d.clickBounds(node.bounds)
-            d.sleep(2.5f)
+            d.sleep(3f)
+            claimCheckinOverlay()
+            if (d.listOpen()) {
+                d.log("签到后列表已打开，不再点赚更多金币")
+                homeEntryClicked = true
+                d.sleep(2f)
+                return
+            }
             val xy = savedEntryXy
             if (xy != null) {
                 d.log("原位置再点（应是赚更多金币）")
                 d.clickXy(xy.first, xy.second)
             }
             homeEntryClicked = true
-            d.sleep(4f)
+            d.sleep(5f)
             if (d.listOpen()) return
         }
         val entryHit = findHomeButton(cfg.entryKeywords, ignore = listOf("签到", "再赚"))
@@ -492,6 +689,7 @@ class TaskEngine(
         }
         if (quiz) {
             d.log("趣味课堂: 点选项 → 我选好了 → 等完成")
+            if (!cooperateInTask()) return false
             clickQuizOption()
             clickQuizSubmit()
             dismissPopups(listSafe = false)
@@ -500,9 +698,10 @@ class TaskEngine(
             return returnToList(search = false, forceExternal = false)
         }
         if (quick) {
-            val settle = 5f
+            val settle = cfg.quickReturnSettle
             d.log("秒返等待 ${settle.toInt()}s 后返回")
             d.sleep(settle)
+            if (!cooperateInTask()) return false
             dismissPopups(listSafe = false)
             return returnToList(search, forceExternal = true)
         }
@@ -517,6 +716,7 @@ class TaskEngine(
         if (waitOnly) {
             d.log("等待完成（不滑动）最多${cfg.maxWaitDuration}s")
             waitForCompletion(timeout)
+            dismissTaskDonePopups()
             return returnToList(search, forceExternal = false)
         }
         val start = System.currentTimeMillis()
@@ -524,6 +724,10 @@ class TaskEngine(
         d.log("浏览滑动 间隔${interval}s 超时${cfg.maxWaitDuration}s")
         var round = 0
         while (svc.running.get()) {
+            if (!cooperateInTask()) {
+                d.log("暂停恢复后界面已变，中断浏览")
+                return returnToList(search, forceExternal = false)
+            }
             if (System.currentTimeMillis() - start > timeout) {
                 d.log("超时返回")
                 break
@@ -543,13 +747,53 @@ class TaskEngine(
             }
             d.sleep(interval)
         }
-        return returnToList(search, forceExternal = false)
+        return finishBrowseAndReturn(search)
+    }
+
+    private fun dismissTaskDonePopups() {
+        for (k in listOf("知道了", "我知道了", "开心收下", "好的", "确认")) {
+            if (d.clickText(k)) {
+                d.log("完成弹层: $k")
+                d.sleep(0.5f)
+                return
+            }
+        }
+    }
+
+    private fun finishBrowseAndReturn(search: Boolean): Boolean {
+        var done = false
+        var how: String? = null
+        repeat(4) {
+            val (d1, h1) = detectDone()
+            if (d1) {
+                done = true
+                how = h1
+                return@repeat
+            }
+            d.sleep(0.6f)
+        }
+        if (done) {
+            d.log("✓ 任务完成: $how")
+        } else {
+            d.log("未明确检测到完成文案，仍尝试返回")
+        }
+        dismissTaskDonePopups()
+        d.sleep(0.8f)
+        if (returnToList(search, forceExternal = false)) return true
+        val pkg = d.currentPkg()
+        if (pkg == cfg.packageName || pkg.startsWith("com.taobao.")) {
+            d.log("后退未回列表，重新导航进淘金币")
+            navigateToCoinTasks()
+            enterTaskList()
+        }
+        return d.listOpen()
     }
 
     /** 沉浸看等：倒计时自动完成，不需滑动 */
     private fun waitForCompletion(timeoutMs: Long) {
         val start = System.currentTimeMillis()
         while (svc.running.get()) {
+            if (!cooperateInTask()) return
             if (System.currentTimeMillis() - start > timeoutMs) {
                 d.log("等待超时")
                 break
@@ -635,13 +879,31 @@ class TaskEngine(
     }
 
     private fun detectDone(): Pair<Boolean, String?> {
+        val strong = listOf(
+            "已完成任务", "任务已完成", "已完成浏览", "浏览已完成", "浏览完成",
+            "已成功领取奖励", "领取成功", "金币已到账",
+        )
+        for (k in strong) {
+            if (d.findNodesByText(k).isNotEmpty()) return true to k
+        }
+        if (d.findNodesByText("已得").isNotEmpty()) return true to "已得"
+        for (k in cfg.completionKeywords) {
+            if (k.isBlank()) continue
+            if (d.findNodesByText(k).isNotEmpty()) return true to k
+        }
         val text = d.pageText()
-        if (looksCountdown(text) && !text.contains("已得") && !text.contains("已完成")) return false to null
         if (text.contains("已得")) return true to "已得"
         if (text.contains("已成功领取奖励")) return true to "已成功领取奖励"
+        for (k in strong) {
+            if (text.contains(k)) return true to k
+        }
+        if (looksCountdown(text) && !text.contains("已得") && !text.contains("已完成")) {
+            return false to null
+        }
         for (k in cfg.completionKeywords) {
             if (k.isNotBlank() && text.contains(k) && !looksCountdown(k)) return true to k
         }
+        if (Regex("浏览\\s*0\\s*秒").containsMatchIn(text)) return true to "浏览0秒"
         return false to null
     }
 
@@ -680,6 +942,13 @@ class TaskEngine(
             d.sleep(0.8f)
             backCount += 1
         }
+        if (d.listOpen()) return true
+        val pkg = d.currentPkg()
+        if (pkg == cfg.packageName || pkg.startsWith("com.taobao.")) {
+            d.log("后退未回列表，重新导航")
+            navigateToCoinTasks()
+            enterTaskList()
+        }
         return d.listOpen()
     }
 
@@ -698,6 +967,31 @@ class TaskEngine(
         }
     }
 
+    /** 会员等级等浏览子页误留：不是任务列表，完成并返回 */
+    private fun recoverStrandedBrowseTask(): Boolean {
+        if (!d.isMembershipLevelPage()) return false
+        d.log("当前在会员等级页（非任务列表）")
+        val (done, how) = detectDone()
+        val ok = if (done || d.pageText().contains("任务已完成")) {
+            d.log("会员页任务已完成 ($how)，返回列表")
+            finishBrowseAndReturn(search = false)
+        } else {
+            d.log("会员页未完成，继续浏览")
+            operateTask(
+                search = false, quick = false, quiz = false,
+                waitOnly = false, clickProducts = false,
+            )
+        }
+        if (ok) {
+            finishCount += 1
+            d.log("✓ 会员等级 +1 → $finishCount/${cfg.targetCount}")
+        } else {
+            hardResetToTaskList()
+        }
+        noTaskCount = 0
+        return true
+    }
+
     /** 已在点商品子页时直接续跑，避免被误判成任务列表 */
     private fun recoverStrandedTask(): Boolean {
         if (!d.isClickProductTaskPage()) return false
@@ -711,7 +1005,6 @@ class TaskEngine(
             if (!d.listOpen()) hardResetToTaskList()
         }
         noTaskCount = 0
-        listScrollStuck = 0
         return true
     }
 

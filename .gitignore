@@ -162,3 +162,10 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 .idea/
 .DS_Store
+
+# Android
+android/.gradle/
+android/local.properties
+android/app/build/
+android/build/
+

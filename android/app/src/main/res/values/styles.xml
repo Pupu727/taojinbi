@@ -86,4 +86,10 @@
         <item name="android:paddingHorizontal">4dp</item>
     </style>
 
+    <style name="TaojinbiSpinnerItem" parent="android:Widget.TextView">
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:padding">12dp</item>
+    </style>
+
 </resources>

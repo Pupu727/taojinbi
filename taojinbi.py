@@ -40,21 +40,94 @@ import xml.etree.ElementTree as ET
 # ===== 暂停/恢复（空格=暂停/继续，q=退出）=====
 _paused = False
 _pause_lock = threading.Lock()
+_pause_snapshot = None
 _ui_lock = threading.Lock()
 _popup_watch_hold = False
 _exit_requested = False
 _listener_stop = False
 _home_entry_clicked = False
-_TASK_LIST_MARKERS = ("去完成", "去逛逛", "逛一逛", "去浏览", "去看看")
+_current_task_name = None
+_TASK_LIST_PRIMARY = ("去完成", "去逛逛", "逛一逛", "去浏览", "去看看")
+_TASK_LIST_CHROME = ("任务面板", "每日来任务", "完成进度", "赚金币抵钱")
+# 兼容旧引用：仅用于「像不像列表」的快速粗判，精确判断请用 is_on_coin_task_list()
+_TASK_LIST_MARKERS = _TASK_LIST_PRIMARY + ("领取奖励", "去领取")
 _BOUNDS_RE = re.compile(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]")
 
 
-def _check_pause():
+def _capture_pause_snapshot(in_task_name=None):
+    name = in_task_name or _current_task_name
+    pkg, act = get_current_app(d)
+    return {
+        "pkg": pkg,
+        "act": act,
+        "in_task": bool(name),
+        "on_list": _task_list_open(),
+        "task_name": name,
+    }
+
+
+def _resume_context_ok(snap):
+    """暂停期间若离开淘宝/回到列表/到桌面，则不应继续当前浏览。"""
+    if not snap:
+        return True
+    pkg, act = get_current_app(d)
+    if not is_taobao_family_package(pkg):
+        print("[恢复] 淘宝不在前台，放弃当前步骤", flush=True)
+        return False
+    act_l = (act or "").lower()
+    if "launcher" in act_l:
+        print("[恢复] 已到桌面，放弃当前步骤", flush=True)
+        return False
+    if snap.get("in_task") and snap.get("on_list") is False:
+        if _task_list_open():
+            print("[恢复] 已从任务页回到列表，放弃当前浏览", flush=True)
+            return False
+    return True
+
+
+def _reload_runtime_config():
+    """暂停恢复后重载 yaml，使刚改的参数立刻生效。"""
+    global config, coin_target, max_no_task, wait_between_tasks
+    global skip_keywords, quiz_keywords, quick_return_keywords
+    config.reload()
+    coin_target = config.get("task.coin.target_count", 40)
+    max_no_task = config.get("retry.max_no_task_count", 3)
+    wait_between_tasks = config.get("operation.wait_between_tasks", 2)
+    skip_keywords, quiz_keywords, quick_return_keywords = _load_task_keywords()
+
+
+def _check_pause(in_task_name=None):
+    """
+    暂停时阻塞；恢复时重载配置并校验界面。
+    返回 True=可继续当前步骤；False=界面已变，应放弃当前任务。
+    """
+    global _pause_snapshot
+    in_task_name = in_task_name or _current_task_name
+    if _exit_requested:
+        print("[退出] 收到退出指令，程序结束", flush=True)
+        raise SystemExit(0)
+    if not _paused:
+        return True
+    if _pause_snapshot is None:
+        _pause_snapshot = _capture_pause_snapshot(in_task_name)
+        print(
+            "[暂停] 已记录当前界面；可修改 conf/config.yaml，空格继续",
+            flush=True,
+        )
     while _paused and not _exit_requested:
         time.sleep(0.3)
     if _exit_requested:
         print("[退出] 收到退出指令，程序结束", flush=True)
         raise SystemExit(0)
+    snap = _pause_snapshot
+    _pause_snapshot = None
+    _reload_runtime_config()
+    ok = _resume_context_ok(snap)
+    if ok:
+        print("[恢复] 参数已重载，继续当前任务", flush=True)
+    else:
+        print("[恢复] 界面已变化，放弃当前任务并重新选任务", flush=True)
+    return ok
 
 
 def _pause_sleep(seconds):
@@ -83,9 +156,7 @@ def _keyboard_listener():
                     with _pause_lock:
                         _paused = not _paused
                     if _paused:
-                        print("\n[暂停] 已暂停，按 空格键 继续运行...", flush=True)
-                    else:
-                        print("[恢复] 继续运行", flush=True)
+                        print("\n[暂停] 已暂停，按 空格键 继续...", flush=True)
                 elif ch in (b"q", b"Q"):
                     _exit_requested = True
                     print("\n[退出] 已请求退出，将在当前任务结束后停止...", flush=True)
@@ -156,6 +227,9 @@ _pause_sleep(launch_wait_time)
 print("✓ 等待完成")
 
 have_clicked = []
+_dead_tasks = set()  # 本轮进度卡住、自动跳过的任务（不含进度后缀）
+_stale_counts = {}
+_PROGRESS_TAIL_RE = re.compile(r"[(（]\s*(\d+)\s*/\s*(\d+)\s*[)）]\s*$")
 
 print("准备监视器（进任务列表后再启动，避免首页 H5 dump 卡死）...")
 ctx = d.watch_context()
@@ -344,7 +418,7 @@ def _dismiss_jump_popups(aggressive_x=False):
 
 def _dismiss_from_xml(xml, aggressive_x=False):
     # 任务列表右上角叉叉文案就是「关闭」；一旦点了就把列表关掉，绝不能当弹窗处理
-    if any(k in xml for k in _TASK_LIST_MARKERS):
+    if is_on_coin_task_list(xml):
         print("[弹窗] 已在任务列表（有去完成/去逛逛），不点关闭", flush=True)
         return False
 
@@ -450,13 +524,36 @@ def check_in_task():
     return is_on_coin_task_list()
 
 
-def is_on_coin_task_list(xml=None):
-    """真正的任务列表：能看到「去完成 / 去逛逛 / 逛一逛」。可传入已 dump 的 xml，避免再读一遍。"""
-    if xml is None:
-        xml = _dump_xml(timeout=4, quiet=True)
+def _is_membership_level_page(xml):
+    """会员等级页也有「去领取」，不能当任务列表。"""
     if not xml:
         return False
-    return any(k in xml for k in _TASK_LIST_MARKERS)
+    if "会员等级" in xml or "我的会员" in xml:
+        return True
+    levels = ("青铜", "白银", "黄金", "铂金", "钻石", "黑钻")
+    if "淘气值" in xml and any(l in xml for l in levels):
+        return True
+    if "精选福利" in xml and "每天领红包" in xml:
+        return True
+    return False
+
+
+def is_on_coin_task_list(xml=None):
+    """真正的任务列表：去完成/去逛逛，或领取类按钮且带任务面板特征。可传入已 dump 的 xml。"""
+    if xml is None:
+        xml = _dump_xml(timeout=4, quiet=True) or ""
+    if not xml:
+        return False
+    if _is_membership_level_page(xml):
+        return False
+    if any(k in xml for k in _TASK_LIST_PRIMARY):
+        return True
+    if any(k in xml for k in _claim_btn_keywords()):
+        if any(k in xml for k in _TASK_LIST_CHROME):
+            return True
+        if re.search(r"\(\d+/\d+\)", xml):
+            return True
+    return False
 
 
 def is_search_like_task(task_name):
@@ -595,7 +692,7 @@ def _entry_keys():
 def _xml_looks_like_coin_home(xml):
     if not xml:
         return False
-    if any(k in xml for k in _TASK_LIST_MARKERS):
+    if is_on_coin_task_list(xml):
         return False
     return any(
         k in xml
@@ -605,7 +702,7 @@ def _xml_looks_like_coin_home(xml):
 
 def _click_homepage_cta(xml, tag):
     """同一颗主按钮：没签是签到领金币，签完是赚更多金币。任务列表里即使还有这四个字也绝不能再点。"""
-    if any(k in xml for k in _TASK_LIST_MARKERS):
+    if is_on_coin_task_list(xml):
         print(f"[{tag}] 已经能看到去完成/去逛逛，不再点赚更多金币", flush=True)
         return "on_list", None, None
     ignore = [str(x) for x in (config.get("operation.checkin_ignore_in_text", []) or []) if x]
@@ -628,19 +725,56 @@ def _click_homepage_cta(xml, tag):
     return None, None, None
 
 
-def _wait_cta_become_entry(saved_xy, wait_seconds=2.5):
+def _click_text_if_exists(texts, timeout=0.35, tag="弹层"):
+    """短查询点文案，不 dump 整页。"""
+    for key in texts:
+        try:
+            n = d(text=key)
+            if n.exists(timeout=timeout):
+                print(f"[{tag}] 点击「{key}」", flush=True)
+                n.click()
+                _pause_sleep(0.6)
+                return True
+        except Exception:
+            pass
+    return False
+
+
+def _settle_after_checkin():
+    """
+    签到后常弹出「立即领取」。必须先领完再点赚更多金币，
+    否则弹层和任务列表叠在一起，一读任务就把列表一起关掉。
+    只查这两个词、短超时，避免首页 H5 被读屏滑走。
+    """
+    print("[签到] 先处理签到成功弹层，再进任务列表", flush=True)
+    claimed = False
+    for _ in range(3):
+        if _click_text_if_exists(("立即领取", "开心收下"), timeout=0.2, tag="签到弹层"):
+            claimed = True
+            _pause_sleep(0.7)
+            continue
+        break
+    _pause_sleep(1.2 if claimed else 0.8)
+
+
+def _wait_cta_become_entry(saved_xy, wait_seconds=3.0):
     """
     签到后不要再 dump 控件树：H5 读节点会把页面滑走，主按钮就跑到上面去了。
-    同一颗按钮还在原坐标，文案会自己变成「赚更多金币」，等一下再点原位置。
+    先把签到成功弹层领掉；同一颗按钮还在原坐标，文案会变成「赚更多金币」。
+    若签到后列表已经自己打开，绝不能再点赚更多金币（会把列表关掉）。
     """
     if not saved_xy:
         print("[导航] 没有记下主按钮坐标，无法再点赚更多金币", flush=True)
         return False
     print(
-        f"[签到] 等 {wait_seconds:.0f} 秒让按钮变成「赚更多金币」（不再读屏，避免下滑）",
+        f"[签到] 等 {wait_seconds:.0f} 秒让签到动画结束（不再读屏，避免下滑）",
         flush=True,
     )
     _pause_sleep(wait_seconds)
+    _settle_after_checkin()
+    if _task_list_open():
+        print("[签到] 任务列表已经打开，不再点赚更多金币", flush=True)
+        return True
     print(f"[导航] 在原位置再点一次 {saved_xy}（现在应是赚更多金币）", flush=True)
     d.click(saved_xy[0], saved_xy[1])
     return True
@@ -666,7 +800,7 @@ def _enter_tasks_from_coin_home():
         return False
     _xml_debug_labels(xml)
 
-    if any(k in xml for k in _TASK_LIST_MARKERS):
+    if is_on_coin_task_list(xml):
         print("✓ 已在任务列表（看到去完成/去逛逛），不点赚更多金币", flush=True)
         _home_entry_clicked = True
         return True
@@ -684,11 +818,11 @@ def _enter_tasks_from_coin_home():
         return True
 
     if state == "checkin":
-        if not _wait_cta_become_entry(xy, wait_seconds=2.5):
+        if not _wait_cta_become_entry(xy, wait_seconds=3.0):
             return False
         _home_entry_clicked = True
-        print("[导航] 已签到并点过原位置，等待任务列表（不再读屏、不再点第二次）", flush=True)
-        _pause_sleep(4)
+        print("[导航] 已签到并点过原位置，多等一会儿让列表弹层稳定（不再读屏、不再点第二次）", flush=True)
+        _pause_sleep(5)
         return True
 
     _home_entry_clicked = True
@@ -929,15 +1063,63 @@ def _looks_like_countdown(text):
 def _looks_like_done(text, keywords=None):
     if not text:
         return False
+    keys = keywords if keywords is not None else _completion_keywords()
+    # 强完成信号：页上可能同时残留「浏览15秒完成任务」倒计时
+    strong = (
+        "已完成任务",
+        "任务已完成",
+        "已完成浏览",
+        "浏览已完成",
+        "浏览完成",
+        "已成功领取奖励",
+        "领取成功",
+        "金币已到账",
+    )
+    for k in strong:
+        if k in text:
+            return True
+    if re.search(r"浏览\s*0\s*秒", text):
+        return True
     if _looks_like_countdown(text):
         return False
-    keys = keywords if keywords is not None else _completion_keywords()
     for k in keys:
         if k and k in text:
             return True
-    # 浏览 0 秒：倒计时走完
-    if re.search(r"浏览\s*0\s*秒", text):
+    return False
+
+
+def _dismiss_task_done_popups():
+    """浏览完成后常有「知道了/开心收下」遮罩，不点掉无法 back 回列表。"""
+    dismissed = False
+    for key in ("知道了", "我知道了", "开心收下", "好的", "确认"):
+        if _click_text_if_exists((key,), timeout=0.2, tag="完成弹层"):
+            dismissed = True
+            _pause_sleep(0.5)
+    return dismissed
+
+
+def _finish_browse_and_return(is_search_task=False):
+    """检测完成 → 关弹层 → 返回列表；失败则尝试重新导航。"""
+    done = False
+    how = None
+    for _ in range(4):
+        done, how = detect_task_completion(use_hierarchy=True)
+        if done:
+            print(f"✓ 任务完成（via {how}）", flush=True)
+            break
+        _pause_sleep(0.6)
+    if not done:
+        print("[任务] 未明确检测到完成文案，仍尝试返回列表", flush=True)
+    _dismiss_task_done_popups()
+    _pause_sleep(0.8)
+    ok = return_to_task_list(is_search_task=is_search_task, force_external=False)
+    if ok:
         return True
+    pkg, _ = get_current_app(d)
+    if is_taobao_family_package(pkg):
+        print("[返回] 多次后退仍未回列表，重新导航进淘金币", flush=True)
+        navigate_to_coin_tasks()
+        return _task_list_open()
     return False
 
 
@@ -948,7 +1130,10 @@ def detect_task_completion(use_hierarchy=True):
     浏览页可以 dump；任务列表弹层不要在选任务时 dump。
     """
     keywords = _completion_keywords()
-    fast_keys = ("已完成任务", "任务已完成", "已得", "已到账", "已获得", "浏览完成", "领取成功", "金币已到账")
+    fast_keys = (
+        "任务已完成", "已完成任务", "已得", "已到账", "已获得",
+        "浏览完成", "领取成功", "金币已到账",
+    )
 
     for key in fast_keys:
         try:
@@ -984,19 +1169,25 @@ def detect_task_completion(use_hierarchy=True):
         try:
             xml = _dump_xml(timeout=2.5, quiet=True) or ""
             has_yide = "已得" in xml
-            has_done = any(k in xml for k in ("已完成任务", "任务已完成", "已到账", "已获得"))
+            has_done = any(
+                k in xml
+                for k in (
+                    "已完成任务",
+                    "任务已完成",
+                    "已完成浏览",
+                    "浏览已完成",
+                    "浏览完成",
+                    "已成功领取奖励",
+                    "领取成功",
+                )
+            )
             if not xml:
                 return False, None
-            # 倒计时文案里也可能带「完成任务」，但不能挡住真正的「已得」
-            if has_yide or has_done:
-                if _looks_like_done(xml, keywords):
-                    return True, "hierarchy"
-                # 控件树里有「已得」但被倒计时误伤时，仍算完成
-                if has_yide and not _looks_like_countdown(xml):
-                    return True, "hierarchy:已得"
-                if has_yide:
-                    # 同页既有倒计时又有已得：以已得为准
-                    return True, "hierarchy:已得优先"
+            # 页上可能同时有倒计时 + 完成文案，完成词优先
+            if has_done:
+                return True, "hierarchy:done"
+            if has_yide:
+                return True, "hierarchy:已得"
             if _looks_like_countdown(xml):
                 return False, None
             if _looks_like_done(xml, keywords):
@@ -1091,6 +1282,12 @@ def return_to_task_list(is_search_task=False, force_external=False):
             consecutive_welcome = 0
 
     print(f"返回界面流程完成（执行了 {back_count} 次后退）")
+    if _task_list_open():
+        return True
+    pkg, _ = get_current_app(d)
+    if is_taobao_family_package(pkg):
+        print("[返回] 后退未回到列表，重新导航进淘金币", flush=True)
+        navigate_to_coin_tasks()
     return _task_list_open()
 
 
@@ -1265,13 +1462,34 @@ def click_classroom_option():
     return True
 
 
-def operate_task(is_search_task=False, quick_return=False, quiz_classroom=False):
+def operate_task(
+    is_search_task=False,
+    quick_return=False,
+    quiz_classroom=False,
+    task_name="",
+):
     """
     进入任务页后处理，走完闭环（做完并回到任务列表）返回 True，否则 False。
     - 普通任务：浏览至完成弹窗或超时，再返回
     - 外跳逛一逛（quick_return）：跳转后立刻按返回策略回淘宝
     - 趣味课堂（quiz_classroom）：点一个选项再返回
     """
+    global _current_task_name
+    _current_task_name = task_name or None
+    try:
+        return _operate_task_inner(
+            is_search_task, quick_return, quiz_classroom, task_name
+        )
+    finally:
+        _current_task_name = None
+
+
+def _operate_task_inner(
+    is_search_task=False,
+    quick_return=False,
+    quiz_classroom=False,
+    task_name="",
+):
     _dismiss_text_popups()
     cancel_btn = d(resourceId="android:id/button2", text="取消")
     if cancel_btn.exists:
@@ -1281,6 +1499,8 @@ def operate_task(is_search_task=False, quick_return=False, quiz_classroom=False)
 
     if quiz_classroom:
         print("[趣味课堂] 进入趣味课堂流程：点选项 → 返回")
+        if not _check_pause(in_task_name=task_name):
+            return return_to_task_list(is_search_task=False, force_external=False)
         click_classroom_option()
         return return_to_task_list(is_search_task=False, force_external=False)
 
@@ -1290,7 +1510,10 @@ def operate_task(is_search_task=False, quick_return=False, quiz_classroom=False)
         end = time.time() + settle
         jumped = False
         while time.time() < end:
-            _check_pause()
+            if not _check_pause(in_task_name=task_name):
+                return return_to_task_list(
+                    is_search_task=is_search_task, force_external=True
+                )
             _dismiss_jump_popups(aggressive_x=True)
             ok, pkg = _confirm_external_leave(samples=2, interval=0.25)
             if ok:
@@ -1299,14 +1522,15 @@ def operate_task(is_search_task=False, quick_return=False, quiz_classroom=False)
                 break
             _pause_sleep(0.3)
 
-        # 外跳页再清一轮弹窗，然后返回
         for _ in range(3):
-            _check_pause()
+            if not _check_pause(in_task_name=task_name):
+                return return_to_task_list(
+                    is_search_task=is_search_task, force_external=True
+                )
             if not _dismiss_jump_popups(aggressive_x=True):
                 break
 
         back_ok = return_to_task_list(is_search_task=is_search_task, force_external=True)
-        # 回到列表后看完成气泡/「任务已完成」——有则算外跳任务完成
         done, how = detect_task_completion(use_hierarchy=True)
         if done:
             print(f"✓ 外跳返回后检测到完成提示（via {how}），本任务结束")
@@ -1315,21 +1539,18 @@ def operate_task(is_search_task=False, quick_return=False, quiz_classroom=False)
         return back_ok
 
     start_time = time.time()
-    max_wait_duration = config.get("operation.max_wait_duration", 35)
-    required_buffer = config.get("operation.required_buffer", 8)
-    swipe_interval = config.get("operation.human_swipe.interval_seconds", None)
-    if swipe_interval is None:
-        swipe_interval = config.get("operation.human_swipe.pause_min", 0.8)
-    swipe_interval = float(swipe_interval)
-
-    # 浏览页不要先卡在读「浏览XX秒」上；用配置超时，读到再缩短
-    timeout_seconds = float(max_wait_duration)
-    print(f"[任务] 滑动间隔 {swipe_interval} 秒，超时 {timeout_seconds} 秒", flush=True)
-
-
     swipe_round = 0
     while True:
-        _check_pause()
+        if not _check_pause(in_task_name=task_name):
+            print("[任务] 暂停恢复后界面已变，中断浏览", flush=True)
+            return return_to_task_list(is_search_task=is_search_task, force_external=False)
+
+        max_wait_duration = config.get("operation.max_wait_duration", 35)
+        swipe_interval = config.get("operation.human_swipe.interval_seconds", None)
+        if swipe_interval is None:
+            swipe_interval = config.get("operation.human_swipe.pause_min", 0.8)
+        swipe_interval = float(swipe_interval)
+        timeout_seconds = float(max_wait_duration)
 
         if time.time() - start_time > timeout_seconds:
             done, how = detect_task_completion(use_hierarchy=True)
@@ -1339,17 +1560,14 @@ def operate_task(is_search_task=False, quick_return=False, quiz_classroom=False)
             print(f"⚠ 已等待 {timeout_seconds} 秒未检测到完成弹窗，按超时处理返回")
             break
 
-        # 先滑再检：避免进页后卡在完成检测上迟迟不滑
         human_like_swipe()
         swipe_round += 1
 
-        # 精选好物「已得XX」必须扫控件树，textContains 经常看不到
         done, how = detect_task_completion(use_hierarchy=True)
         if done:
             print(f"✓ 滑动后检测到完成提示（via {how}），任务完成")
             break
 
-        # 外跳兜底：少做 dumpsys，每 5 轮一次
         if swipe_round % 5 == 0:
             ok, pkg = _confirm_external_leave(samples=1, interval=0.15)
             if ok:
@@ -1358,8 +1576,7 @@ def operate_task(is_search_task=False, quick_return=False, quiz_classroom=False)
 
         _pause_sleep(swipe_interval)
 
-    # 沉浸看等淘宝内任务：不要 force_external，避免回到列表后再多按一次返回
-    return return_to_task_list(is_search_task=is_search_task, force_external=False)
+    return _finish_browse_and_return(is_search_task=is_search_task)
 
 
 def check_task_progress(target_count=40):
@@ -1411,9 +1628,75 @@ def check_task_progress(target_count=40):
     return False
 
 
+def _parse_task_progress(name):
+    """标题末尾 (0/1)、(1/5) → (cur, target)。没有进度则 None。"""
+    m = _PROGRESS_TAIL_RE.search(name or "")
+    if not m:
+        return None
+    return int(m.group(1)), int(m.group(2))
+
+
+def _task_base_name(name):
+    base = _PROGRESS_TAIL_RE.sub("", name or "").strip()
+    return base or (name or "").strip()
+
+
+def _read_list_progress(base_name):
+    """回到列表后读该任务当前进度。行消失视为已做完（None）。"""
+    if not base_name:
+        return None
+    rows = _capture_go_rows()
+    if rows and not any(r.get("name") for r in rows) and _task_list_open():
+        rows = _fill_names_from_xml(rows)
+    for r in rows:
+        n = r.get("name") or ""
+        if _task_base_name(n) == base_name or base_name in n:
+            return _parse_task_progress(n)
+    return None
+
+
+def _note_progress_after(task_name, before):
+    """
+    做完一轮后看进度有没有涨。
+    沉浸看 (0/5)→(1/5) 会清零；一直 (0/1) 连续两次则本轮自动跳过。
+    没有 (x/y) 的任务不走这条，避免误伤。
+    """
+    if before is None:
+        return
+    before_cur, before_target = before
+    base = _task_base_name(task_name)
+    _pause_sleep(0.8)
+    after = _read_list_progress(base)
+    if after is None:
+        _stale_counts.pop(base, None)
+        print(f"[进度] 「{base}」列表里已看不到，视为有变化", flush=True)
+        return
+    after_cur, after_target = after
+    if after_cur > before_cur:
+        _stale_counts.pop(base, None)
+        print(
+            f"[进度] 「{base}」{before_cur}/{before_target} → {after_cur}/{after_target}，继续可做",
+            flush=True,
+        )
+        return
+    n = _stale_counts.get(base, 0) + 1
+    _stale_counts[base] = n
+    limit = int(config.get("retry.max_stale_progress_attempts", 2) or 2)
+    print(
+        f"[进度] 「{base}」仍是 {after_cur}/{after_target}"
+        f"（第 {n}/{limit} 次无变化）",
+        flush=True,
+    )
+    if n >= limit:
+        _dead_tasks.add(base)
+        print(f"⚠ 「{base}」进度连续无变化，本轮自动跳过", flush=True)
+
+
 def _restart_and_navigate():
     print("   重新启动淘宝并导航到淘金币任务界面...")
     have_clicked.clear()
+    _dead_tasks.clear()
+    _stale_counts.clear()
     d.app_stop(package_name)
     _pause_sleep(2)
     d.app_start(package_name)
@@ -1436,7 +1719,7 @@ def _task_name_near_bounds(xml, left, top, right, bottom):
         return None
     cy = (top + bottom) // 2
     best = None
-    skip_exact = ("去完成", "去逛逛", "逛一逛", "去浏览", "去看看", "立即领取")
+    skip_exact = ("去完成", "去逛逛", "逛一逛", "去浏览", "去看看", "立即领取", "领取奖励", "去领取")
     for node in _iter_xml_nodes(xml):
         t = _node_label(node)
         if not t or len(t) < 2 or t in skip_exact:
@@ -1474,7 +1757,7 @@ def _get_task_name(btn, xml=None):
             int(b.get("bottom", 0)),
         )
         desc = (info.get("contentDescription") or info.get("text") or "").strip()
-        if desc and desc not in ("去完成", "去逛逛", "逛一逛", "去浏览", "去看看"):
+        if desc and desc not in _GO_BTN_TEXTS + tuple(_claim_btn_keywords()):
             return desc
     except Exception:
         pass
@@ -1510,15 +1793,38 @@ def _get_task_name(btn, xml=None):
 
 
 _GO_BTN_TEXTS = ("去完成", "去逛逛", "逛一逛", "去浏览", "去看看")
+_DEFAULT_CLAIM_BTN_TEXTS = ("领取奖励", "去领取")
+
+
+def _claim_btn_keywords():
+    keys = [str(x) for x in (config.get("operation.direct_claim_btn_keywords", []) or []) if x]
+    return keys or list(_DEFAULT_CLAIM_BTN_TEXTS)
+
+
+def _action_btn_pattern():
+    return "|".join(_GO_BTN_TEXTS + tuple(_claim_btn_keywords()))
+
+
+def _is_direct_claim_btn(text):
+    if not text:
+        return False
+    t = str(text).strip()
+    keys = _claim_btn_keywords()
+    return t in keys or any(k in t for k in keys)
 
 
 def _go_buttons():
-    return d(className="android.widget.Button", textMatches="去完成|去逛逛|逛一逛|去浏览|去看看")
+    return d(className="android.widget.Button", textMatches=_action_btn_pattern())
 
 
 def _task_list_open():
     try:
-        return bool(d(text="去完成").exists(timeout=0.25) or d(text="去逛逛").exists(timeout=0.25))
+        for k in _TASK_LIST_PRIMARY:
+            if d(text=k).exists(timeout=0.2):
+                return True
+        if any(d(text=k).exists(timeout=0.15) for k in _claim_btn_keywords()):
+            return is_on_coin_task_list()
+        return False
     except Exception:
         return False
 
@@ -1547,25 +1853,66 @@ def _bounds_from_info(info):
     )
 
 
+def _btn_label_from_info(info):
+    return (info.get("text") or info.get("contentDescription") or "").strip()
+
+
+def _name_from_btn_info(info):
+    desc = _btn_label_from_info(info)
+    if desc and desc not in _GO_BTN_TEXTS + tuple(_claim_btn_keywords()):
+        return desc
+    return None
+
+
 def _capture_go_rows():
-    """先记下每个「去完成」的坐标，再读名字。dump 可能关掉弹层。"""
+    """
+    先一次取齐所有「去完成」坐标，再尝试读名字。
+    签到后的列表弹层很脆：逐个 sibling 读名会把列表关掉，所以坐标必须先保住。
+    """
     to_btn = _go_buttons()
-    if not to_btn.exists:
+    if not to_btn.exists(timeout=0.4):
         return []
     rows = []
+    infos = []
+    try:
+        infos = to_btn.info_list() or []
+    except Exception:
+        infos = []
+    if infos:
+        for i, info in enumerate(infos):
+            rows.append(
+                {
+                    "i": i,
+                    "bounds": _bounds_from_info(info),
+                    "name": _name_from_btn_info(info),
+                    "btn_text": _btn_label_from_info(info),
+                }
+            )
+        if any(r.get("name") for r in rows):
+            return rows
+        if not _task_list_open():
+            return rows
+        for r in rows:
+            try:
+                r["name"] = _get_task_name(to_btn[r["i"]])
+            except Exception:
+                if not _task_list_open():
+                    print("[选任务] 读标题时列表被关掉，保留已记下的坐标", flush=True)
+                    break
+        return rows
     for i in range(len(to_btn)):
         try:
             view = to_btn[i]
             info = view.info
-            bounds = _bounds_from_info(info)
-            desc = (info.get("contentDescription") or info.get("text") or "").strip()
-            name = None
-            if desc and desc not in _GO_BTN_TEXTS:
-                name = desc
-            else:
-                name = _get_task_name(view)
-            rows.append({"i": i, "bounds": bounds, "name": name})
-        except Exception as e:
+            rows.append(
+                {
+                    "i": i,
+                    "bounds": _bounds_from_info(info),
+                    "name": _name_from_btn_info(info) or _get_task_name(view),
+                    "btn_text": _btn_label_from_info(info),
+                }
+            )
+        except Exception:
             continue
     return rows
 
@@ -1597,41 +1944,69 @@ def _live_button_bounds(index):
         return None
 
 
+def _recover_stranded_browse_task():
+    """会员等级等浏览子页误留：不是任务列表，完成并返回。"""
+    xml = _dump_xml(timeout=3, quiet=True) or ""
+    if not _is_membership_level_page(xml):
+        return False
+    print("[恢复] 当前在会员等级页（非任务列表）", flush=True)
+    done, how = detect_task_completion(use_hierarchy=True)
+    if done or "任务已完成" in xml:
+        print(f"[恢复] 会员页任务已完成 ({how})，返回列表", flush=True)
+        return _finish_browse_and_return(is_search_task=False)
+    print("[恢复] 会员页未完成，继续浏览", flush=True)
+    return operate_task(is_search_task=False, task_name="查看我的会员等级")
+
+
 def pick_next_coin_task(skip_keywords, clicked_names):
     """
-    扫描当前可见的「去完成/去逛逛/逛一逛」，跳过屏蔽与已点过的。
+    扫描当前可见的「去完成/去逛逛/领取奖励」等，跳过屏蔽与已点过的。
     先 sibling 取名（旧逻辑）；取不到再 dump 一次按坐标取名，列表被关掉就重开。
+    返回 (按钮组, 任务名, 可见数, 点击坐标, 是否列表内直接领取)。
     """
     to_btn = _go_buttons()
-    if not to_btn.exists:
-        return None, None, 0, None
+    if not to_btn.exists(timeout=0.4):
+        return None, None, 0, None, False
 
     rows = _capture_go_rows()
     total = len(rows)
     if total == 0:
-        return None, None, 0, None
+        return None, None, 0, None, False
     if not any(r.get("name") for r in rows):
-        print("[选任务] 按钮旁读不到标题，改为整页解析任务名", flush=True)
-        rows = _fill_names_from_xml(rows)
+        if _task_list_open():
+            print("[选任务] 按钮旁读不到标题，改为整页解析任务名", flush=True)
+            rows = _fill_names_from_xml(rows)
+        else:
+            print("[选任务] 读任务时列表已关，先重开，本轮用已记下的坐标", flush=True)
+            _reopen_task_list()
 
     print(f"[选任务] 当前可见可点按钮 {total} 个，开始筛选...")
-    resolved = []
     for r in rows:
         name = r.get("name") or ("未命名任务#%s" % r["i"])
         r["name"] = name
-        resolved.append(name)
         if check_chars_exist(name, skip_keywords):
             print(f"  [{r['i']}] 「{name}」→ 屏蔽，跳过")
             continue
-        if name in clicked_names:
+        base = _task_base_name(name)
+        if base in _dead_tasks:
+            print(f"  [{r['i']}] 「{name}」→ 进度无变化已自动跳过")
+            continue
+        prog = _parse_task_progress(name)
+        if prog and prog[0] >= prog[1] > 0:
+            print(f"  [{r['i']}] 「{name}」→ 进度已满，跳过")
+            continue
+        # 有 (x/y) 且未满：允许再点（沉浸看 0/5→1/5）。没进度的仍按「本轮已点过」跳过。
+        if name in clicked_names and prog is None:
             print(f"  [{r['i']}] 「{name}」→ 本轮已点过，跳过")
             continue
         bounds = _live_button_bounds(r["i"]) or r["bounds"]
-        print(f"  [{r['i']}] 「{name}」→ 选中执行 {bounds}")
-        return to_btn, name, total, bounds
+        is_claim = _is_direct_claim_btn(r.get("btn_text"))
+        tag = "列表内领取" if is_claim else "选中执行"
+        print(f"  [{r['i']}] 「{name}」→ {tag} {bounds}")
+        return to_btn, name, total, bounds, is_claim
 
     print("[选任务] 可见任务均已屏蔽或已点过")
-    return None, None, total, None
+    return None, None, total, None, False
 
 
 # --- 主流程：仅淘金币 ---
@@ -1647,6 +2022,10 @@ print(f"  - 跳过（不点击）{len(skip_keywords)} 个关键词: {skip_keywor
 print(f"  - 秒返 {len(quick_return_keywords)} 个关键词: {quick_return_keywords}")
 print(f"  - 趣味课堂 {len(quiz_keywords)} 个关键词: {quiz_keywords}")
 print(f"  - 完成提示 {len(_completion_keywords())} 个关键词: {_completion_keywords()}")
+print(
+    f"  - 进度卡住跳过: 同一 (x/y) 连续 "
+    f"{config.get('retry.max_stale_progress_attempts', 2)} 次无变化则本轮跳过"
+)
 print("✓ 配置加载完成（名单只来自 conf/config.yaml）\n")
 
 def _popup_watch_loop():
@@ -1682,20 +2061,45 @@ print("=" * 60)
 
 while True:
     try:
-        _check_pause()
+        if not _check_pause():
+            pkg, _ = get_current_app(d)
+            if not is_taobao_family_package(pkg):
+                navigate_to_coin_tasks()
+            continue
         if finish_count >= coin_target:
             print(f"✓ 已完成闭环 {finish_count}/{coin_target}，达到配置目标，结束")
             break
 
         print(f"开始查找淘金币任务... 当前进度 {finish_count}/{coin_target}")
+        if _recover_stranded_browse_task():
+            finish_count += 1
+            print(f"✓ 会员等级恢复 +1 → {finish_count}/{coin_target}")
+            no_task_count = 0
+            _pause_sleep(wait_between_tasks)
+            continue
         get_btn = d(className="android.widget.Button", text="立即领取")
-        if get_btn.exists:
+        if get_btn.exists(timeout=0.25):
             get_btn.click()
-            _pause_sleep(3)
+            print("[淘金币] 点击「立即领取」", flush=True)
+            _pause_sleep(1.5)
+            if not _task_list_open():
+                print("[淘金币] 点立即领取后任务列表关了，重新打开", flush=True)
+                _reopen_task_list()
+                continue
 
-        need_click_view, task_name, visible_n, click_bounds = pick_next_coin_task(
+        need_click_view, task_name, visible_n, click_bounds, is_direct_claim = pick_next_coin_task(
             skip_keywords, have_clicked
         )
+        if need_click_view is None and visible_n > 0 and not _task_list_open():
+            if _recover_stranded_browse_task():
+                finish_count += 1
+                print(f"✓ 误留子页恢复 +1 → {finish_count}/{coin_target}")
+                no_task_count = 0
+                _pause_sleep(wait_between_tasks)
+                continue
+            print("[淘金币] 有按钮但不在任务列表，重新导航", flush=True)
+            navigate_to_coin_tasks()
+            continue
         if need_click_view is None and visible_n == 0:
             list_open = _task_list_open()
             entry_visible = False
@@ -1716,7 +2120,7 @@ while True:
                 0.3,
             )
             _pause_sleep(2)
-            need_click_view, task_name, visible_n, click_bounds = pick_next_coin_task(
+            need_click_view, task_name, visible_n, click_bounds, is_direct_claim = pick_next_coin_task(
                 skip_keywords, have_clicked
             )
             if need_click_view is None and visible_n == 0 and config.get(
@@ -1734,7 +2138,8 @@ while True:
 
         if need_click_view is not None and click_bounds:
             print(f"点击淘金币任务: {task_name}  （开始前进度 {finish_count}/{coin_target}）")
-            if task_name not in have_clicked:
+            before_prog = _parse_task_progress(task_name)
+            if before_prog is None and task_name not in have_clicked:
                 have_clicked.append(task_name)
             left, top, right, bottom = click_bounds
             pad = 10
@@ -1750,7 +2155,20 @@ while True:
             _dismiss_text_popups()
             still_list = _task_list_open()
             if still_list:
+                if is_direct_claim:
+                    _pause_sleep(1.0)
+                    done, how = detect_task_completion(use_hierarchy=False)
+                    finish_count += 1
+                    hint = f"（{how}）" if done else ""
+                    print(
+                        f"✓ 列表内直接领取「{task_name}」+1 → {finish_count}/{coin_target}{hint}",
+                        flush=True,
+                    )
+                    _note_progress_after(task_name, before_prog)
+                    no_task_count = 0
+                    continue
                 print("[任务] 点完仍在任务列表，未进入任务页，不滑动", flush=True)
+                _note_progress_after(task_name, before_prog)
                 continue
 
             is_search = False
@@ -1779,6 +2197,7 @@ while True:
                 is_search_task=is_search,
                 quick_return=quick,
                 quiz_classroom=quiz,
+                task_name=task_name,
             )
             if loop_ok:
                 finish_count += 1
@@ -1792,6 +2211,7 @@ while True:
                     f"进度仍为 {finish_count}/{coin_target}",
                     flush=True,
                 )
+            _note_progress_after(task_name, before_prog)
             no_task_count = 0
         else:
             no_task_count += 1

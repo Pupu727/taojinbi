@@ -44,9 +44,21 @@ class A11yDriver(
     private val service: CoinA11yService,
     private val targetPkg: String,
 ) {
+    companion object {
+        @Volatile private var lastDualPickAt = 0L
+        private const val DUAL_PICK_COOLDOWN_MS = 3500L
+    }
+
     private val main = Handler(Looper.getMainLooper())
     private val selfPkg = service.packageName
     val goTexts = listOf("去完成", "去逛逛", "逛一逛", "去浏览", "去看看")
+    val claimTexts = listOf("领取奖励", "去领取")
+    private val actionTexts = goTexts + claimTexts
+
+    fun isDirectClaimLabel(label: String): Boolean {
+        val t = label.trim()
+        return claimTexts.any { t == it || (t.contains(it) && t.length <= it.length + 8) }
+    }
 
     fun log(msg: String) = service.emitLog(msg)
 
@@ -54,6 +66,8 @@ class A11yDriver(
         if (seconds <= 0f) return
         val end = SystemClock.uptimeMillis() + (seconds * 1000).toLong()
         while (SystemClock.uptimeMillis() < end) {
+            if (!service.running.get()) return
+            service.blockWhilePaused()
             if (!service.running.get()) return
             Thread.sleep(min(200L, end - SystemClock.uptimeMillis()).coerceAtLeast(1L))
         }
@@ -79,11 +93,31 @@ class A11yDriver(
 
     fun pageText(): String = snapshot().joinToString("\n") { it.label }
 
+    /** 会员等级等淘宝内子页也有「去领取」，不能当任务列表 */
+    fun isMembershipLevelPage(text: String = pageText()): Boolean {
+        if (text.contains("会员等级") || text.contains("我的会员")) return true
+        val levels = listOf("青铜", "白银", "黄金", "铂金", "钻石", "黑钻")
+        if (text.contains("淘气值") && levels.any { text.contains(it) }) return true
+        if (text.contains("精选福利") && text.contains("每天领红包")) return true
+        return false
+    }
+
+    private fun looksLikeTaskListChrome(text: String): Boolean =
+        text.contains("任务面板") || text.contains("每日来任务") ||
+            text.contains("完成进度") || text.contains("赚金币抵钱")
+
     fun listOpen(nodes: List<UiNode> = snapshot()): Boolean {
         val text = nodes.joinToString("\n") { it.label }
         if (isClickProductTaskPage(text)) return false
-        if (findGoButtons(nodes).isNotEmpty()) return true
-        return findTaskRows(nodes).isNotEmpty()
+        if (isMembershipLevelPage(text)) return false
+        if (findTaskRows(nodes).isNotEmpty()) return true
+        val gos = findGoButtons(nodes)
+        if (gos.any { btn -> goTexts.any { g -> btn.label.contains(g) } }) return true
+        // 仅「去领取/领取奖励」时须像任务列表（有面板特征），否则是会员页等
+        if (gos.any { isDirectClaimLabel(it.label) } && looksLikeTaskListChrome(text)) {
+            return true
+        }
+        return false
     }
 
     /** 用系统按文案搜索，H5 任务列表里比 walk 更可靠 */
@@ -133,11 +167,25 @@ class A11yDriver(
         return clickXy(x, y, durationMs)
     }
 
-    fun clickXy(x: Int, y: Int, durationMs: Long = 120): Boolean {
+    fun clickXy(x: Int, y: Int, durationMs: Long = 120, forgiving: Boolean = false): Boolean {
         val path = Path().apply { moveTo(x.toFloat(), y.toFloat()) }
-        val ok = gesture(path, durationMs)
-        if (!ok) log("手势失败 ($x,$y) ${durationMs}ms")
-        return ok
+        return when (gestureOutcome(path, durationMs)) {
+            GestureOutcome.COMPLETED -> true
+            GestureOutcome.CANCELLED -> {
+                if (!forgiving) {
+                    log("手势被取消 ($x,$y) ${durationMs}ms（界面切换时常见，不一定未点到）")
+                }
+                forgiving
+            }
+            GestureOutcome.DISPATCH_FAILED -> {
+                log("手势派发失败 ($x,$y) ${durationMs}ms")
+                false
+            }
+            GestureOutcome.TIMEOUT -> {
+                log("手势超时 ($x,$y) ${durationMs}ms")
+                false
+            }
+        }
     }
 
     /**
@@ -344,7 +392,7 @@ class A11yDriver(
 
         fun isGoBtn(n: UiNode): Boolean {
             val label = n.label
-            return goTexts.any { g -> label == g || (label.contains(g) && label.length <= g.length + 10) }
+            return actionTexts.any { g -> label == g || (label.contains(g) && label.length <= g.length + 10) }
         }
 
         fun accept(n: UiNode): Boolean {
@@ -361,7 +409,7 @@ class A11yDriver(
         }
 
         nodes.filter { accept(it) }.forEach(::add)
-        findNodesByText(*goTexts.toTypedArray()).forEach(::add)
+        findNodesByText(*actionTexts.toTypedArray()).forEach(::add)
         // H5 列表里按钮 class 常为 Button
         nodes.filter { it.cls.contains("Button", true) && isGoBtn(it) }.forEach(::add)
 
@@ -459,7 +507,7 @@ class A11yDriver(
         val w = screenW()
         val h = screenH()
         val minTop = (h * 0.16f).toInt()
-        val skipExact = goTexts.toSet() + setOf("立即领取", "赚更多金币", "签到领金币", "关闭")
+        val skipExact = actionTexts.toSet() + setOf("立即领取", "赚更多金币", "签到领金币", "关闭")
 
         val raw = nodes.filter { n ->
             val t = n.label.trim()
@@ -581,7 +629,7 @@ class A11yDriver(
             if (isValidTaskName(name)) return name
         }
         val desc = btn.desc.trim()
-        if (desc.isNotBlank() && goTexts.none { desc == it || (desc.length <= 20 && desc.contains(it)) }) {
+        if (desc.isNotBlank() && actionTexts.none { desc == it || (desc.length <= 20 && desc.contains(it)) }) {
             if (isValidTaskName(desc)) return desc
         }
         nameNear(nodes, btn.bounds)?.let { if (isValidTaskName(it)) return it }
@@ -590,7 +638,7 @@ class A11yDriver(
             .filter { n ->
                 val t = n.label.trim()
                 if (isListChromeText(t)) return@filter false
-                t.length in 4..36 && goTexts.none { t == it } &&
+                t.length in 4..36 && actionTexts.none { t == it } &&
                     !t.contains("¥") && !t.contains("已抵") && !t.contains("人已抢") &&
                     kotlin.math.abs(n.cy - cy) <= 55 && n.bounds.right <= btn.bounds.left + 20 &&
                     n.bounds.top >= (screenH() * 0.12f).toInt()
@@ -603,7 +651,7 @@ class A11yDriver(
     private fun nameNear(nodes: List<UiNode>, btn: Rect): String? {
         val cy = btn.centerY()
         val minTop = (screenH() * 0.12f).toInt()
-        val skip = goTexts.toSet() + setOf("立即领取", "赚更多金币", "签到领金币")
+        val skip = actionTexts.toSet() + setOf("立即领取", "赚更多金币", "签到领金币")
         return nodes
             .filter { n ->
                 val t = n.label.trim()
@@ -937,13 +985,117 @@ class A11yDriver(
         return false
     }
 
+    /** 系统双开选择器（OPPO/小米等）弹出中 */
+    fun isDualAppPickerShowing(): Boolean {
+        val pkg = currentPkg()
+        if (pkg.contains("multiapp", true) || pkg.contains("dual", true) ||
+            pkg.contains("clone", true) || pkg.contains("parallel", true)
+        ) {
+            return true
+        }
+        val text = pageText()
+        return text.contains("选择打开的应用") || text.contains("选择要使用的应用") ||
+            text.contains("选择应用") || (text.contains("淘宝") && text.contains("分身") && text.contains("取消"))
+    }
+
+    private fun tryClickDualAppByText(mode: Int): Boolean {
+        if (!isDualAppPickerShowing()) return false
+        val nodes = findNodesByText("淘宝", "淘宝(分身)", "取消")
+        val hit = when (mode) {
+            UserSettings.DUAL_CLONE -> nodes.firstOrNull { n ->
+                val t = n.label
+                t.contains("分身") || t.contains("双开") || t.contains("克隆")
+            }
+            else -> nodes.firstOrNull { n ->
+                val t = n.label
+                t.contains("淘宝") && !t.contains("分身") && !t.contains("双开")
+            } ?: nodes.firstOrNull { it.label.trim() == "淘宝" }
+        } ?: return false
+        log("双开选择: 点文案「${hit.label}」")
+        return clickBounds(hit.bounds, durationMs = 200)
+    }
+
+    /** 双开选择器：优先点文案，否则按用户坐标；防抖避免重复点击。 */
+    fun handleDualAppPicker(): Boolean {
+        val ctx = service.applicationContext
+        val mode = UserSettings.getDualAppMode(ctx)
+        if (mode == UserSettings.DUAL_OFF) return false
+        if (isTaobaoForeground()) return false
+        val now = System.currentTimeMillis()
+        if (now - lastDualPickAt < DUAL_PICK_COOLDOWN_MS) return false
+
+        var sawPicker = isDualAppPickerShowing()
+        if (!sawPicker) {
+            repeat(8) {
+                sleep(0.25f)
+                if (isDualAppPickerShowing()) {
+                    sawPicker = true
+                    return@repeat
+                }
+                if (isTaobaoForeground()) return false
+            }
+        }
+        if (!sawPicker && !isDualAppPickerShowing()) return false
+
+        lastDualPickAt = now
+        val modeLabel = UserSettings.dualAppModeLabel(ctx)
+        val beforePkg = currentPkg()
+
+        if (tryClickDualAppByText(mode)) {
+            sleep(1f)
+            if (isTaobaoForeground() || !isDualAppPickerShowing()) {
+                log("双开选择: 文案点击成功 [$modeLabel]")
+                return true
+            }
+        }
+
+        val (x, y) = when (mode) {
+            UserSettings.DUAL_MAIN -> UserSettings.getDualCoord1(ctx)
+            UserSettings.DUAL_CLONE -> UserSettings.getDualCoord2(ctx)
+            else -> return false
+        }
+        if (x < 0 || y < 0) {
+            log("双开已开启但未设置坐标，请到「任务设置」里选手动坐标")
+            return false
+        }
+        val cx = x.coerceIn(2, screenW() - 3)
+        val cy = y.coerceIn(2, screenH() - 3)
+        log("双开选择: 坐标点击 ($cx,$cy) [$modeLabel]")
+        clickXy(cx, cy, durationMs = 200, forgiving = true)
+        sleep(1.2f)
+        return when {
+            isTaobaoForeground() -> {
+                log("双开选择: 已进入淘宝")
+                true
+            }
+            currentPkg() != beforePkg && !isDualAppPickerShowing() -> {
+                log("双开选择: 选择器已关闭")
+                true
+            }
+            else -> false
+        }
+    }
+
     fun ensureTaobao(): Boolean {
         if (isTaobaoForeground()) {
             log("当前已在淘宝")
             return true
         }
+        if (isDualAppPickerShowing()) {
+            log("检测到双开选择器 pkg=${currentPkg()}")
+            handleDualAppPicker()
+            repeat(5) { i ->
+                sleep(if (i == 0) 2f else 1.5f)
+                if (isTaobaoForeground()) {
+                    log("淘宝已在前台")
+                    return true
+                }
+            }
+        }
         log("当前包名=${currentPkg()}，直接拉起淘宝（不回桌面）…")
         if (!launchTaobao()) return false
+        sleep(0.8f)
+        handleDualAppPicker()
         repeat(3) { i ->
             sleep(if (i == 0) 3.5f else 2f)
             if (isTaobaoForeground()) {
@@ -982,29 +1134,46 @@ class A11yDriver(
         return if (pkg == selfPkg) null else active
     }
 
-    private fun gesture(path: Path, durationMs: Long): Boolean {
+    private enum class GestureOutcome { COMPLETED, CANCELLED, DISPATCH_FAILED, TIMEOUT }
+
+    private fun gestureOutcome(path: Path, durationMs: Long): GestureOutcome {
         val stroke = android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, durationMs)
         val desc = android.accessibilityservice.GestureDescription.Builder().addStroke(stroke).build()
-        val ok = AtomicReference(false)
+        val completed = AtomicReference(false)
+        val cancelled = AtomicReference(false)
+        val dispatched = AtomicReference(false)
         val latch = CountDownLatch(1)
         main.post {
-            service.dispatchGesture(
+            val ok = service.dispatchGesture(
                 desc,
                 object : AccessibilityService.GestureResultCallback() {
                     override fun onCompleted(gestureDescription: android.accessibilityservice.GestureDescription?) {
-                        ok.set(true)
+                        completed.set(true)
                         latch.countDown()
                     }
+
                     override fun onCancelled(gestureDescription: android.accessibilityservice.GestureDescription?) {
+                        cancelled.set(true)
                         latch.countDown()
                     }
                 },
                 null,
             )
+            dispatched.set(ok)
+            if (!ok) latch.countDown()
         }
-        latch.await(3, TimeUnit.SECONDS)
-        return ok.get()
+        val waited = latch.await(3, TimeUnit.SECONDS)
+        return when {
+            completed.get() -> GestureOutcome.COMPLETED
+            cancelled.get() -> GestureOutcome.CANCELLED
+            !dispatched.get() -> GestureOutcome.DISPATCH_FAILED
+            !waited -> GestureOutcome.TIMEOUT
+            else -> GestureOutcome.TIMEOUT
+        }
     }
+
+    private fun gesture(path: Path, durationMs: Long): Boolean =
+        gestureOutcome(path, durationMs) == GestureOutcome.COMPLETED
 
     private fun walk(node: AccessibilityNodeInfo, out: MutableList<UiNode>) {
         val b = Rect()

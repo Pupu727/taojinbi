@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/pickRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#CC0F0D0B">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:layout_margin="20dp"
+        android:background="@drawable/bg_dialog"
+        android:orientation="vertical"
+        android:padding="18dp">
+
+        <TextView
+            android:id="@+id/pickTitle"
+            style="@style/TaojinbiTextTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="选择坐标"
+            android:textColor="@color/gold_primary"
+            android:textSize="17sp" />
+
+        <TextView
+            android:id="@+id/pickHint"
+            style="@style/TaojinbiTextBody"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="请先在手机上手动打开淘宝，让双开选择器出现在屏幕上，然后点击对应图标的位置。" />
+
+        <TextView
+            android:id="@+id/pickCrosshair"
+            style="@style/TaojinbiTextCaption"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="点击屏幕任意位置即可记录坐标"
+            android:textColor="@color/info_primary" />
+
+        <Button
+            android:id="@+id/pickCancel"
+            style="@style/TaojinbiButtonGhost"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="end"
+            android:layout_marginTop="8dp"
+            android:text="取消" />
+    </LinearLayout>
+</FrameLayout>

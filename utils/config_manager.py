@@ -73,6 +73,7 @@ class Config:
                 "checkin_done_keywords": ["已签到"],
                 "checkin_ignore_in_text": ["领红包", "神器", "已签"],
                 "coin_entry_keywords": ["赚更多金币"],
+                "direct_claim_btn_keywords": ["领取奖励", "去领取"],
                 "quick_return_keywords": [],
                 "quick_return_settle_seconds": 3,
             },
@@ -81,6 +82,7 @@ class Config:
                 "min_back_times_search": 2,
                 "min_back_times_normal": 1,
                 "max_no_task_count": 3,
+                "max_stale_progress_attempts": 2,
                 "navigation_max_attempts": 5
             },
             "debug": {
@@ -113,6 +115,19 @@ class Config:
             return object.__getattribute__(self, name)
         return getattr(self.cfg, name)
     
+    def reload(self):
+        """重新从磁盘加载配置（暂停恢复、改参数后生效）。"""
+        if getattr(sys, 'frozen', False):
+            project_root = Path(sys.executable).parent
+        else:
+            project_root = Path(__file__).parent.parent
+        full_path = project_root / "conf/config.yaml"
+        if full_path.exists():
+            self.cfg = OmegaConf.load(full_path)
+            print(f"✓ 配置已重载: {full_path}", flush=True)
+        else:
+            print(f"⚠ 重载失败，配置文件不存在: {full_path}", flush=True)
+
     def print_config(self):
         """打印当前配置"""
         print("\n" + "=" * 60)

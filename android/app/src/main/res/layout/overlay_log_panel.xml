@@ -18,6 +18,7 @@
             android:layout_height="wrap_content"
             android:fontFamily="monospace"
             android:lineSpacingExtra="2dp"
+            android:longClickable="true"
             android:text="等待开始…"
             android:textColor="@color/log_text"
             android:textSize="10sp" />

@@ -13,9 +13,13 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 class CoinA11yService : AccessibilityService() {
+    /** 引擎线程是否在跑（含暂停中） */
     val running = AtomicBoolean(false)
+    /** 用户点了「停止」：引擎阻塞在此，不退出线程 */
+    val paused = AtomicBoolean(false)
     private val executor = Executors.newSingleThreadExecutor()
-    private var engine: TaskEngine? = null
+    var engine: TaskEngine? = null
+        private set
     private var overlay: LogOverlay? = null
 
     override fun onServiceConnected() {
@@ -47,10 +51,12 @@ class CoinA11yService : AccessibilityService() {
 
     override fun onInterrupt() {
         running.set(false)
+        paused.set(false)
     }
 
     override fun onDestroy() {
         running.set(false)
+        paused.set(false)
         overlay?.hide()
         overlay = null
         instance = null
@@ -59,6 +65,13 @@ class CoinA11yService : AccessibilityService() {
 
     fun startLoop() {
         try {
+            if (running.get() && paused.get()) {
+                engine?.prepareResume()
+                paused.set(false)
+                overlay?.setRunning(true)
+                emitLog("继续运行…")
+                return
+            }
             if (running.get()) {
                 emitLog("已经在跑")
                 return
@@ -68,6 +81,7 @@ class CoinA11yService : AccessibilityService() {
                 return
             }
             running.set(true)
+            paused.set(false)
             overlay?.setRunning(true)
             emitLog("开始运行…")
             executor.execute {
@@ -81,21 +95,38 @@ class CoinA11yService : AccessibilityService() {
                     emitLog("运行异常: ${e.message ?: e.javaClass.simpleName}")
                 } finally {
                     running.set(false)
+                    paused.set(false)
+                    engine = null
                     onEngineStopped()
                 }
             }
         } catch (e: Exception) {
             running.set(false)
+            paused.set(false)
             overlay?.setRunning(false)
             emitLog("启动失败: ${e.message ?: e.javaClass.simpleName}")
         }
     }
 
+    /** 暂停：保持引擎线程与当前任务上下文，仅阻塞在 cooperate() */
     fun stopLoop() {
         if (!running.get()) return
-        running.set(false)
+        paused.set(true)
         overlay?.setRunning(false)
-        emitLog("已暂停，点「继续」恢复")
+        emitLog("已暂停；可改配置，点「继续」恢复当前任务")
+    }
+
+    /** 暂停期间 sleep / 主循环会阻塞在此 */
+    fun blockWhilePaused() {
+        if (!paused.get()) return
+        engine?.ensurePauseSnapshot()
+        while (paused.get() && running.get()) {
+            try {
+                Thread.sleep(200)
+            } catch (_: InterruptedException) {
+                break
+            }
+        }
     }
 
     private fun ensureOverlay(): Boolean {
@@ -111,7 +142,7 @@ class CoinA11yService : AccessibilityService() {
 
     fun onEngineStopped() {
         overlay?.setRunning(false)
-        emitLog("已停止，点「继续」恢复运行")
+        emitLog("已停止，点「继续」重新开始")
     }
 
     fun emitLog(msg: String) {
@@ -150,5 +181,15 @@ class CoinA11yService : AccessibilityService() {
     companion object {
         @Volatile var instance: CoinA11yService? = null
         @Volatile var logSink: ((String) -> Unit)? = null
+
+        /** 保留供外部调用；内部已防抖，重复调用会被忽略。 */
+        fun handleDualAppPickerIfNeeded() {
+            val svc = instance ?: return
+            if (UserSettings.getDualAppMode(svc) == UserSettings.DUAL_OFF) return
+            val pkg = runCatching {
+                ConfigLoader.loadWithInfo(svc).config.packageName
+            }.getOrDefault("com.taobao.taobao")
+            A11yDriver(svc, pkg).handleDualAppPicker()
+        }
     }
 }

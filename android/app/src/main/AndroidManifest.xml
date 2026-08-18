@@ -30,10 +30,10 @@
         </activity>
 
         <activity
-            android:name=".SettingsActivity"
+            android:name=".CoordinatePickActivity"
             android:exported="false"
-            android:label="任务设置"
-            android:parentActivityName=".MainActivity" />
+            android:label="选择坐标"
+            android:theme="@style/Theme.Taojinbi" />
 
         <service
             android:name=".CoinA11yService"

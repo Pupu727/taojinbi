@@ -16,7 +16,8 @@ import android.widget.TextView
 import androidx.core.content.ContextCompat
 
 /**
- * 紧凑悬浮胶囊：可拖、展开日志、停止/继续；日志区 [FLAG_NOT_TOUCHABLE] 穿透。
+ * 紧凑悬浮胶囊：可拖、展开日志、停止/继续。
+ * 日志面板始终 [FLAG_NOT_TOUCHABLE]，展开时不挡下方按钮；复制日志请用 App 首页长按日志区。
  */
 class LogOverlay(private val context: Context) {
     private val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -117,6 +118,17 @@ class LogOverlay(private val context: Context) {
         logView?.post {
             logView?.visibility = if (expanded) View.VISIBLE else View.GONE
             expandBtn?.text = if (expanded) "收起" else "日志"
+        }
+    }
+
+    private fun baseFlags(touchable: Boolean): Int {
+        var flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+        return if (touchable) {
+            flags or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+        } else {
+            flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
         }
     }
 
@@ -226,19 +238,11 @@ class LogOverlay(private val context: Context) {
         }
 
     private fun baseParams(type: Int, touchable: Boolean, width: Int): WindowManager.LayoutParams {
-        var flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
-        flags = if (touchable) {
-            flags or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
-        } else {
-            flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-        }
         return WindowManager.LayoutParams(
             width,
             WindowManager.LayoutParams.WRAP_CONTENT,
             type,
-            flags,
+            baseFlags(touchable),
             PixelFormat.TRANSLUCENT,
         )
     }
