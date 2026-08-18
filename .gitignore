@@ -163,9 +163,6 @@ cython_debug/
 .idea/
 .DS_Store
 
-# Android
-android/.gradle/
-android/local.properties
-android/app/build/
-android/build/
+# Android（独立仓库，单独推送至 taojinbi-Andriod）
+android/
 
